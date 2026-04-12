@@ -130,6 +130,79 @@ Spawn `tw-researcher` to analyze the domain and identify:
 
 ### Step 4: Generate project files
 
+**If --from-prd was used:**
+
+In this mode, there are no product discovery answers or technical answers — the PRD is your **only source of truth**. Read it and any associated documents with full attention. Your goal is to faithfully translate the PRD into structured project files.
+
+**Step 4a: Read the PRD and associated documents**
+- Use the `Read` tool to read the PRD file at the path provided with `--from-prd`
+- Also check for and read any co-located documents in the same directory as the PRD (e.g., `requirements.md`, `architecture.md`, `api-spec.md`, `mockups/`, `designs/`)
+- List every document you read in your output so the user knows what was consulted
+
+**Step 4b: Synthesize into project files**
+
+Spawn `tw-planner` with the PRD content as the source material. The planner will generate:
+
+**`.threadwork/state/PROJECT.md`**:
+- Vision (2–3 sentences derived from the PRD)
+- Core principles (5–7 items)
+- Tech stack (identified from the PRD — if the PRD specifies a stack, use it; if not, infer from context and mark as "inferred, confirm in discuss-phase")
+- Constraints (from the PRD)
+
+**`.threadwork/state/REQUIREMENTS.md`**:
+- Functional requirements with REQ-001, REQ-002 format — **derived directly from every feature described in the PRD**
+- Non-functional requirements (performance, security, scalability) — extract from the PRD or infer if absent
+- Explicitly out-of-scope items (from the PRD's explicit exclusions or MVP scope)
+
+**`.threadwork/state/ROADMAP.md`**:
+```markdown
+# Roadmap
+
+## Milestone 1: Foundation
+### Phase 1: Project setup + auth
+### Phase 2: Core data model + API
+
+## Milestone 2: Features
+### Phase 3: ...
+```
+
+**`.threadwork/state/STATE.json`**: Machine-readable project state
+
+**Step 4c: Clarify if needed**
+If the PRD is silent on or ambiguous about any of the following, ask the user one targeted clarifying question **before generating files** — do not guess:
+- Core user roles or authentication approach
+- MVP boundary (what's in vs. deliberately out)
+- Any constraint, integration, or non-functional requirement the PRD mentions but doesn't specify
+- Tech stack if the PRD doesn't specify one
+
+Present each ambiguity as a specific question with your best inference. Example:
+> "The PRD mentions 'secure API access' but doesn't specify the auth mechanism. My best inference is JWT stateless tokens — is that correct, or do you prefer session-based auth?"
+
+**Step 4d: Present for confirmation**
+After generating the files, summarize what you understood from the PRD and present it for confirmation:
+```
+Here is what I extracted from your PRD:
+
+**Product**: [...]
+**Users**: [...]
+**Core features** (REQ-001 through REQ-NN):
+- REQ-001: [...]
+- REQ-002: [...]
+**Inferred (not in PRD — please confirm)**:
+- Tech stack: [inferred stack] — is this right?
+- Auth approach: [inferred] — is this right?
+**Gaps / clarifications needed**: [...]
+**Out of scope**: [...]
+
+Do these extracted requirements accurately reflect your PRD? Correct anything before we proceed.
+```
+
+Repeat until confirmed, then proceed to Step 5.
+
+---
+
+**Otherwise (interactive mode):**
+
 Spawn `tw-planner` with all gathered context — product discovery answers AND technical answers — to generate:
 
 **`.threadwork/state/PROJECT.md`**:
@@ -173,3 +246,4 @@ Commit all generated files: `git add -A && git commit -m "feat: initialize proje
 - `--from-prd` file missing: "File not found: <path>. Check the path and try again."
 - User corrections in summary step: Re-present the summary after incorporating changes. Repeat until confirmed.
 - Vague product discovery answers: Ask a targeted follow-up question rather than proceeding with assumptions.
+- PRD ambiguity: Ask one targeted clarifying question per topic. Do not guess at auth mechanism, MVP scope, or architectural constraints that the PRD leaves undefined.
