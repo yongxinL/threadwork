@@ -98,7 +98,8 @@ async function main() {
       try {
         const { recordUsage, checkThresholds, getSessionUsed } = await import('../lib/token-tracker.js');
         const taskId = `tool-${toolName}-${Date.now()}`;
-        recordUsage(taskId, tokensUsed, tokensUsed);
+        const model = toolInput.model ?? 'sonnet';
+        recordUsage(taskId, tokensUsed, tokensUsed, model);
 
         // 3. Check thresholds and emit visible warnings
         const thresholds = checkThresholds();

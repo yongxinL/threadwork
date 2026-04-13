@@ -3,17 +3,36 @@
  *
  * Updates framework files without overwriting user-customized specs or state.
  * With --to v0.2.0: runs the targeted v0.2.0 migration (idempotent).
+ * With --verify: report sync status of every file without applying changes.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
+// ── Content-diff helper ────────────────────────────────────────────────────────
+
+/**
+ * Compare source and destination file contents.
+ * @returns {'new'|'changed'|'same'}
+ */
+function diffStatus(src, dest) {
+  if (!existsSync(dest)) return 'new';
+  try {
+    const srcContent = readFileSync(src, 'utf8');
+    const destContent = readFileSync(dest, 'utf8');
+    return srcContent === destContent ? 'same' : 'changed';
+  } catch {
+    return 'changed';
+  }
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export async function runUpdate(options) {
   const cwd = process.cwd();
-  const isDryRun = options.dryRun;
+  const isDryRun = options.dryRun || options.verify;
+  const verifyOnly = options.verify ?? false;
   const targetVersion = options.to;
   const stateDir = join(cwd, '.threadwork', 'state');
 
@@ -35,19 +54,25 @@ export async function runUpdate(options) {
   }
 
   // ── Standard update (no version target) ─────────────────────────────────────
-  console.log('\n── Threadwork Update ─────────────────────────────');
-  if (isDryRun) console.log('DRY RUN — no changes will be applied\n');
-
-  const changes = await collectFrameworkUpdates(cwd, isDryRun);
-
-  if (changes.length === 0) {
-    console.log('Nothing to update.');
+  if (verifyOnly) {
+    console.log('\n── Threadwork Verify ─────────────────────────────');
+    console.log('Checking sync status (no changes will be applied)\n');
   } else {
-    console.log('Changes:');
-    for (const c of changes) console.log(c);
+    console.log('\n── Threadwork Update ─────────────────────────────');
+    if (isDryRun) console.log('DRY RUN — no changes will be applied\n');
   }
 
-  if (!isDryRun) {
+  const { lines, updatedCount, newCount, sameCount } = await collectFrameworkUpdates(cwd, isDryRun);
+
+  for (const line of lines) console.log(line);
+
+  const needsAction = updatedCount + newCount;
+  if (verifyOnly) {
+    console.log(`\n${sameCount} up to date, ${needsAction} need updating`);
+    if (needsAction > 0) console.log("Run 'threadwork update' to apply.");
+  } else if (isDryRun) {
+    console.log(`\n${needsAction} file(s) would be updated. Run without --dry-run to apply.`);
+  } else {
     // Stamp _frameworkUpdatedAt in project.json
     try {
       const projectPath = join(stateDir, 'project.json');
@@ -56,9 +81,7 @@ export async function runUpdate(options) {
       proj._frameworkUpdatedAt = new Date().toISOString();
       writeFileSync(projectPath, JSON.stringify(proj, null, 2));
     } catch { /* ignore */ }
-    console.log('\n✅ Update complete.');
-  } else {
-    console.log('\nDRY RUN — no changes applied.');
+    console.log(`\n✅ Update complete. ${needsAction} file(s) updated, ${sameCount} already up to date.`);
   }
 }
 
@@ -718,10 +741,35 @@ async function runMigrateV032({ cwd, stateDir, isDryRun }) {
 // ── Shared: collect standard framework file updates ───────────────────────────
 
 async function collectFrameworkUpdates(cwd, isDryRun) {
-  const changes = [];
+  const lines = [];
+  let updatedCount = 0;
+  let newCount = 0;
+  let sameCount = 0;
   const { homedir } = await import('os');
 
-  // Idempotently add git permissions to project-level .claude/settings.json
+  /**
+   * Evaluate one file: print status line, optionally copy, tally counters.
+   * @param {string} src - absolute source path
+   * @param {string} dest - absolute destination path
+   * @param {string} label - display label shown in output
+   */
+  function syncFile(src, dest, label) {
+    const status = diffStatus(src, dest);
+    if (status === 'same') {
+      lines.push(`  ✅ ${label}`);
+      sameCount++;
+    } else if (status === 'new') {
+      lines.push(`  ✨ ${label} — new file`);
+      newCount++;
+      if (!isDryRun) { mkdirSync(dirname(dest), { recursive: true }); cpSync(src, dest); }
+    } else {
+      lines.push(`  ⬆  ${label} — needs update`);
+      updatedCount++;
+      if (!isDryRun) { mkdirSync(dirname(dest), { recursive: true }); cpSync(src, dest); }
+    }
+  }
+
+  // ── .claude/settings.json — permissions ──────────────────────────────────────
   const projectSettingsPath = join(cwd, '.claude', 'settings.json');
   let projectSettings = {};
   if (existsSync(projectSettingsPath)) {
@@ -732,89 +780,108 @@ async function collectFrameworkUpdates(cwd, isDryRun) {
   projectSettings.permissions.allow = projectSettings.permissions.allow ?? [];
   const missing = THREADWORK_PERMISSIONS.filter(p => !projectSettings.permissions.allow.includes(p));
   if (missing.length > 0) {
-    projectSettings.permissions.allow.push(...missing);
-    changes.push(`  .claude/settings.json — git auto-approval added (${missing.join(', ')})`);
+    lines.push(`  ⬆  .claude/settings.json — missing permissions: ${missing.join(', ')}`);
+    updatedCount++;
     if (!isDryRun) {
+      projectSettings.permissions.allow.push(...missing);
       mkdirSync(join(cwd, '.claude'), { recursive: true });
       writeFileSync(projectSettingsPath, JSON.stringify(projectSettings, null, 2), 'utf8');
     }
+  } else {
+    lines.push('  ✅ .claude/settings.json — permissions ok');
+    sameCount++;
   }
 
-  // Refresh ~/.threadwork/pricing.json with latest template prices
+  // ── ~/.threadwork/pricing.json ────────────────────────────────────────────────
   const pricingTemplate = join(__dirname, '..', 'templates', 'pricing.json');
   const pricingDest = join(homedir(), '.threadwork', 'pricing.json');
   if (existsSync(pricingTemplate)) {
-    changes.push('  ~/.threadwork/pricing.json — refreshed with latest model prices');
-    if (!isDryRun) {
-      mkdirSync(join(homedir(), '.threadwork'), { recursive: true });
-      cpSync(pricingTemplate, pricingDest);
-    }
+    syncFile(pricingTemplate, pricingDest, '~/.threadwork/pricing.json');
   }
 
-  // Update hooks
+  // ── Hooks (.threadwork/hooks/) ────────────────────────────────────────────────
+  lines.push('\nHooks:');
   const hooksSourceDir = join(__dirname, '..', 'hooks');
   const hooksDestDir = join(cwd, '.threadwork', 'hooks');
   if (existsSync(hooksSourceDir)) {
-    for (const file of readdirSync(hooksSourceDir)) {
+    for (const file of readdirSync(hooksSourceDir).sort()) {
       if (file.endsWith('.js') && file !== 'test-harness.js') {
-        const dest = join(hooksDestDir, file);
-        changes.push(`  hooks/${file} → .threadwork/hooks/${file}`);
-        if (!isDryRun) cpSync(join(hooksSourceDir, file), dest);
+        syncFile(join(hooksSourceDir, file), join(hooksDestDir, file),
+          `.threadwork/hooks/${file}`);
       }
     }
   }
 
-  // Update lib (hooks dependency)
+  // ── Lib (.threadwork/lib/) ────────────────────────────────────────────────────
+  lines.push('\nLib:');
   const libSourceDir = join(__dirname, '..', 'lib');
   const libDestDir = join(cwd, '.threadwork', 'lib');
   if (existsSync(libSourceDir)) {
-    if (!isDryRun) cpSync(libSourceDir, libDestDir, { recursive: true });
-    changes.push('  lib/ → .threadwork/lib/ (all files)');
+    if (!isDryRun) mkdirSync(libDestDir, { recursive: true });
+    for (const file of readdirSync(libSourceDir).sort()) {
+      if (file.endsWith('.js')) {
+        syncFile(join(libSourceDir, file), join(libDestDir, file),
+          `.threadwork/lib/${file}`);
+      }
+    }
   }
 
-  // Update commands
+  // ── Commands (~/.claude/commands/tw/) ────────────────────────────────────────
+  lines.push('\nCommands:');
   const commandsSrcDir = join(__dirname, '..', 'templates', 'commands');
-  const { getCommandsDir, detectRuntime } = await import('../lib/runtime.js');
+  const { getCommandsDir, getAgentsDir, detectRuntime } = await import('../lib/runtime.js');
   const runtime = detectRuntime();
   const commandsDest = getCommandsDir(runtime);
   if (existsSync(commandsSrcDir)) {
-    for (const file of readdirSync(commandsSrcDir)) {
+    if (!isDryRun) mkdirSync(commandsDest, { recursive: true });
+    for (const file of readdirSync(commandsSrcDir).sort()) {
       if (file.endsWith('.md')) {
         const destFile = file.replace(/^tw-/, '');
-        changes.push(`  commands/${file} → ${destFile}`);
-        if (!isDryRun) {
-          // Remove stale tw-prefixed duplicate if present
-          const stalePath = join(commandsDest, file);
-          if (file !== destFile && existsSync(stalePath)) {
-            const { rmSync } = await import('fs');
-            rmSync(stalePath);
-          }
-          cpSync(join(commandsSrcDir, file), join(commandsDest, destFile));
+        // Remove stale tw-prefixed duplicate if present
+        if (!isDryRun && file !== destFile && existsSync(join(commandsDest, file))) {
+          const { rmSync } = await import('fs');
+          rmSync(join(commandsDest, file));
         }
+        syncFile(join(commandsSrcDir, file), join(commandsDest, destFile),
+          `commands/tw/${destFile}`);
       }
     }
   }
 
-  // Update spec TEMPLATES only (not user-created specs)
+  // ── Agents (~/.claude/agents/) ───────────────────────────────────────────────
+  lines.push('\nAgents:');
+  const agentsSrcDir = join(__dirname, '..', 'templates', 'agents');
+  const agentsDest = getAgentsDir(runtime);
+  if (existsSync(agentsSrcDir)) {
+    if (!isDryRun) mkdirSync(agentsDest, { recursive: true });
+    for (const file of readdirSync(agentsSrcDir).sort()) {
+      if (file.endsWith('.md')) {
+        syncFile(join(agentsSrcDir, file), join(agentsDest, file), `agents/${file}`);
+      }
+    }
+  }
+
+  // ── Spec templates (.threadwork/specs/) — new files only ─────────────────────
+  lines.push('\nSpec templates (new files only — existing specs preserved):');
   const specsSrcDir = join(__dirname, '..', 'templates', 'specs');
   const specsDestDir = join(cwd, '.threadwork', 'specs');
   if (existsSync(specsSrcDir)) {
-    for (const domain of readdirSync(specsSrcDir)) {
+    for (const domain of readdirSync(specsSrcDir).sort()) {
       const domainSrc = join(specsSrcDir, domain);
+      if (!statSync(domainSrc).isDirectory()) continue;
       const domainDest = join(specsDestDir, domain);
-      if (statSync(domainSrc).isDirectory()) {
-        for (const file of readdirSync(domainSrc)) {
-          const destFile = join(domainDest, file);
-          if (existsSync(destFile)) {
-            changes.push(`  ⚠ Skipping ${domain}/${file} (user-modified spec preserved)`);
-          } else {
-            changes.push(`  specs/${domain}/${file} (new template)`);
-            if (!isDryRun) cpSync(join(domainSrc, file), destFile);
-          }
+      for (const file of readdirSync(domainSrc).sort()) {
+        const destFile = join(domainDest, file);
+        if (existsSync(destFile)) {
+          lines.push(`  ⚠  specs/${domain}/${file} — skipped (user spec preserved)`);
+        } else {
+          lines.push(`  ✨ specs/${domain}/${file} — new template`);
+          newCount++;
+          if (!isDryRun) { mkdirSync(domainDest, { recursive: true }); cpSync(join(domainSrc, file), destFile); }
         }
       }
     }
   }
 
-  return changes;
+  return { lines, updatedCount, newCount, sameCount };
 }

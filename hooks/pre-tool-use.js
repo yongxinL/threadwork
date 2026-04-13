@@ -8,7 +8,7 @@
  * Execution target: < 200ms
  */
 
-import { readFileSync, appendFileSync, mkdirSync } from 'fs';
+import { readFileSync, appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 process.on('uncaughtException', (err) => {
@@ -176,7 +176,7 @@ async function main() {
         const fileCountMatch = taskDescription.match(/(\d+)\s+files?/i);
         const fileCount = fileCountMatch ? parseInt(fileCountMatch[1], 10) : 0;
         const highComplexityAgent = agentType === 'tw-debugger' || agentType === 'tw-planner';
-        const complexKeywords = ['refactor', 'architecture', 'migrate', 'redesign'];
+        const complexKeywords = ['refactor', 'architecture', 'migrate', 'redesign', 'debug', 'complex'];
         const hasComplexKeyword = complexKeywords.some(k => descLower.includes(k));
         if (fileCount >= 6 || highComplexityAgent || hasComplexKeyword) {
           contextAdvisory = [
@@ -222,22 +222,90 @@ async function main() {
       payload.tool_input.description = injectionPrefix + '\n\n---\n\n' + taskInput.description;
     }
 
-    // v0.3.0: Model switch policy check
+    // v0.3.2: Model tier selection using plan complexity
+    // Priority: 1. <complexity model="..."> from plan XML in prompt
+    //            2. assessTask() 7-dimension scoring from description/files
+    //            3. Keyword heuristics fallback (model-switcher.js)
+    let complexityResult = null;
+    let planModelFromXml = null;
+    let extractedFiles = [];
+
     try {
-      const { getRecommendedModel, getAgentDefault, requestSwitch, logSwitch } =
+      // 1. First: check if plan XML <complexity model="..."> is already in the prompt
+      // This was written by tw-plan-phase Step 3b and carries the authoritative model rec
+      const complexityMatch = taskDescription.match(/<complexity\s[^>]*model="([^"]+)"[^>]*>/i);
+      if (complexityMatch) {
+        planModelFromXml = complexityMatch[1]; // 'haiku' | 'sonnet' | 'opus'
+        // Also extract confidence if present for logging
+        const confidenceMatch = taskDescription.match(/confidence="(\d+)"/i);
+        const confidence = confidenceMatch ? parseInt(confidenceMatch[1], 10) : null;
+        const scoreMatch = taskDescription.match(/score="(\d+)"/i);
+        const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
+        complexityResult = {
+          modelRecommendation: planModelFromXml,
+          confidence,
+          adjustedScore: score,
+          source: 'plan-xml'
+        };
+      }
+    } catch { /* plan XML parsing failed — fall through to assessTask */ }
+
+    // 2. If no plan XML complexity, run assessTask() on the description
+    if (!complexityResult) {
+      try {
+        const { assessTask } = await import('../lib/complexity-assessor.js');
+
+        // Try to extract files from the task prompt description
+        const filesMatch = taskDescription.match(/files?[:\s]+([^\n]+)/i);
+        if (filesMatch) {
+          extractedFiles = filesMatch[1].split(/[,\s]+/).map(f => f.trim()).filter(f => f.length > 1);
+        }
+
+        complexityResult = assessTask({
+          description: taskDescription,
+          files: extractedFiles,
+          phaseNumber: currentPhase
+        });
+
+        // If complexity assessment has low confidence, surface it in the advisory
+        if (complexityResult.confidence < 60) {
+          contextAdvisory = contextAdvisory
+            ? `${contextAdvisory}\n⚠️ COMPLEXITY UNCERTAINTY (${complexityResult.confidence}%): ${complexityResult.confidenceJustification}. Consider clarifying with the user before execution.`
+            : `⚠️ COMPLEXITY UNCERTAINTY (${complexityResult.confidence}%): ${complexityResult.confidenceJustification}. Consider clarifying before execution.`;
+        }
+      } catch { /* assessTask may not be available */ }
+    }
+
+    // v0.3.0 / v0.3.2: Model switch policy check
+    // NOTE: always use 'auto' in the hook — notify/approve require interactive terminal
+    // and would block for 10+ seconds, causing the hook to be killed before it writes output.
+    try {
+      const { getRecommendedModel, getAgentDefault, logSwitch } =
         await import('../lib/model-switcher.js');
       const fileCountMatch = taskDescription.match(/(\d+)\s+files?/i);
-      const fileCount = fileCountMatch ? parseInt(fileCountMatch[1], 10) : 0;
-      const recommendedModel = getRecommendedModel(taskDescription, fileCount, agentType);
+      const fileCount = fileCountMatch ? parseInt(fileCountMatch[1], 10) : (extractedFiles.length || 0);
+      const recommendedModel = getRecommendedModel(taskDescription, fileCount, agentType, complexityResult);
       const agentDefault = getAgentDefault(agentType);
+
+      // Always stamp tool_input.model so post-tool-use can track it for the token log
+      if (payload.tool_input) {
+        payload.tool_input.model = recommendedModel;
+      }
+
       if (recommendedModel !== agentDefault) {
-        const { approved } = await requestSwitch(agentDefault, recommendedModel,
-          `Task complexity: ${fileCount >= 6 ? '6+ files' : 'keywords/agent type'}`, undefined);
-        if (approved) {
-          logSwitch(agentDefault, recommendedModel, `agent-spawn-${Date.now()}`,
-            `auto-recommended for ${agentType}`, false);
-          logHook('INFO', `pre-tool-use: model switch ${agentDefault} → ${recommendedModel} for ${agentType}`);
-        }
+        const complexityNote = complexityResult
+          ? complexityResult.source === 'plan-xml'
+            ? `plan-xml model=${recommendedModel}`
+            : `7-dim score=${complexityResult.adjustedScore} (${complexityResult.tier}, conf=${complexityResult.confidence}%)`
+          : `file-count=${fileCount}`;
+        logSwitch(agentDefault, recommendedModel, `agent-spawn-${Date.now()}`,
+          `auto-recommended for ${agentType}`, false);
+        logHook('INFO', `pre-tool-use: model switch ${agentDefault} → ${recommendedModel} for ${agentType} [${complexityNote}]`);
+        process.stderr.write(
+          `[Threadwork] Model switch: ${agentDefault} → ${recommendedModel} (${complexityNote})\n`
+        );
+      } else {
+        logHook('INFO', `pre-tool-use: model confirmed ${recommendedModel} for ${agentType}`);
       }
     } catch { /* model-switcher errors must never block execution */ }
 

@@ -28,6 +28,8 @@ Nine upgrades across three tiers — spec enforcement, knowledge retention, desi
 
 **Upgrading from v0.3.x?** Run `threadwork update --to v0.3.2` — non-destructive, idempotent, 14 steps. See [docs/upgrade.md](docs/upgrade.md).
 
+**Patch fixes (2026-04-13):** Model switching now works correctly in hooks — the previous `notify` policy caused a 10-second block that killed the hook before the model override was written. The hook now switches immediately and always stamps `tool_input.model` so the token log correctly tracks which model ran each task. `threadwork update` gained a `--verify` flag and now does content-diff comparison before copying (only changed files are written; agents directory included). Wave display in `/tw:execute-phase` shows the model tier per plan.
+
 ## What's New in v0.3.0
 
 Five operational gap fixes for real-world v0.2.x deployments:
@@ -439,10 +441,10 @@ This skips all seven clarifying questions and instead reads your document to gen
 
 v0.3.0 adds runtime model tier enforcement via `lib/model-switcher.js`. Each agent has a default tier (Opus for planning/research/debug, Sonnet for execution/verification, Haiku for coordination). When task complexity warrants a tier upgrade, the switcher fires according to your policy.
 
-**Three policies:**
+**Three policies** (apply to CLI commands; hooks always use auto-switch with a stderr line):
 - `auto` — switches happen silently and are logged
-- `notify` — a 10-second countdown appears before any switch; press Ctrl+C to cancel
-- `approve` — an explicit y/n prompt before each switch
+- `notify` — a one-line stderr message is printed before any switch (hooks) or a 10-second countdown in interactive CLI commands
+- `approve` — an explicit y/n prompt before each switch (CLI commands only)
 
 Set policy at init (question 9) or change anytime mid-session:
 
@@ -490,7 +492,22 @@ threadwork update --to v0.3.0
 threadwork update --to v0.3.2
 ```
 
-Both commands are idempotent — safe to run multiple times. User specs, journals, handoffs, and plan files are **never modified**. See [docs/upgrade.md](docs/upgrade.md) for the full migration guide including step-by-step details and troubleshooting.
+All migration commands are idempotent — safe to run multiple times. User specs, journals, handoffs, and plan files are **never modified**. See [docs/upgrade.md](docs/upgrade.md) for the full migration guide including step-by-step details and troubleshooting.
+
+**Standard update (apply latest framework files to current project):**
+
+```bash
+# Check what's out of sync — no changes applied
+threadwork update --verify
+
+# Preview what would change
+threadwork update --dry-run
+
+# Apply all out-of-sync files
+threadwork update
+```
+
+`threadwork update` compares every framework file by content (not modification date) before copying. Output shows ✅ up to date, ⬆ needs update, or ✨ new file per file. Covers: hooks, lib, commands, agents, and spec templates (new-only for specs — existing user specs are never overwritten).
 
 ---
 

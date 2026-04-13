@@ -34,13 +34,14 @@ teamMode=team  (project.json) → TEAM (subject to 10% budget floor)
 teamMode=auto  (project.json) → AUTO: decide per wave (see Step 3T.0)
 ```
 
-4. Display wave structure with chosen mode:
+4. Display wave structure with chosen mode.
+   For each plan, read its `<complexity model="...">` field from the plan XML — fall back to `sonnet` if absent.
 ```
 Phase N Execution Plan:
   Mode: Team (bidirectional)   ← or Legacy / Auto (decides per wave)
-  Wave 1 (parallel): PLAN-N-1, PLAN-N-2, PLAN-N-3
-  Wave 2 (parallel): PLAN-N-4, PLAN-N-5
-  Wave 3 (sequential): PLAN-N-6
+  Wave 1 (parallel): PLAN-N-1 [haiku], PLAN-N-2 [sonnet], PLAN-N-3 [haiku]
+  Wave 2 (parallel): PLAN-N-4 [opus], PLAN-N-5 [sonnet]
+  Wave 3 (sequential): PLAN-N-6 [sonnet]
 Total: 6 plans, N tasks
 ```
 
@@ -52,10 +53,12 @@ If `--plan <ID>` provided: execute only that plan.
 
 For each wave:
 1. Show token budget before starting
-2. Spawn `tw-executor` agents in parallel via Task() for each plan in the wave
-3. Each executor receives: PLAN XML, tech stack context (from project.json), relevant specs (auto-injected), git branch info
-4. Wait for all plans in wave to complete before proceeding
-5. After wave completion: read SUMMARY.md files, verify commits with `git log --oneline -5`
+2. Print a spawn line for each plan showing model (from `<complexity model="...">` in plan XML, else `sonnet`):
+   `  → Spawning PLAN-N-1 [haiku] ...`
+3. Spawn `tw-executor` agents in parallel via Task() for each plan in the wave
+4. Each executor receives: PLAN XML, tech stack context (from project.json), relevant specs (auto-injected), git branch info
+5. Wait for all plans in wave to complete before proceeding
+6. After wave completion: read SUMMARY.md files, verify commits with `git log --oneline -5`
 
 ### Step 3T: Execute each wave — TEAM mode
 *(Used when mode = TEAM, or AUTO decided TEAM for this wave)*
@@ -78,10 +81,12 @@ Use TEAM for this wave if ALL of:
 Otherwise: fall back to LEGACY for this wave
 ```
 
-Announce the decision inline:
+Announce the decision inline (include per-plan model from `<complexity model="...">`):
 ```
 Wave 1: 3 plans — Team mode  (budget: 420K/800K remaining, est: 95K, workers: 3)
+  PLAN-N-1 [haiku]  PLAN-N-2 [sonnet]  PLAN-N-3 [haiku]
 Wave 2: 1 plan  — Legacy mode (single plan, team overhead not worth it)
+  PLAN-N-4 [opus]
 ```
 
 **3T.1 Calculate per-worker budget:**
@@ -192,12 +197,12 @@ Wave is complete when all plans have a terminal status (DONE / FAILED / partial)
 1. Send `shutdown_request` to all remaining active workers
 2. Update `team-session.json` status to `"completed"`
 3. Write `{ cleared: true }` to team-session.json
-4. Display wave result table:
+4. Display wave result table (include the model each plan ran with):
 ```
 Wave 1 results:
-  PLAN-N-1: DONE   (4 tasks, 3 commits)
-  PLAN-N-2: DONE   (3 tasks, 2 commits)
-  PLAN-N-3: FAILED (blocked on T-N-3-2: missing auth type export)
+  PLAN-N-1 [haiku]:  DONE   (4 tasks, 3 commits)
+  PLAN-N-2 [sonnet]: DONE   (3 tasks, 2 commits)
+  PLAN-N-3 [haiku]:  FAILED (blocked on T-N-3-2: missing auth type export)
 ```
 
 **3T.6 Sub-wave for deferred plans** (when max-workers < planCount):

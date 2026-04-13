@@ -46,6 +46,7 @@ program
   .description('Update Threadwork framework files (preserves user specs and state)')
   .option('--to <version>', 'Migrate to a specific version (e.g. v0.2.0)')
   .option('--dry-run', 'Preview what would change without applying', false)
+  .option('--verify', 'Check sync status of all framework files without applying changes', false)
   .action(async (options) => {
     try {
       const { runUpdate } = await import('../install/update.js');

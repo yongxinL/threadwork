@@ -11,6 +11,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Nine upgrades across three tiers — Spec Enforcement, Knowledge, Design, Verification, and Autonomous Operation:**
 
+### Fixed (2026-04-13)
+
+- **`hooks/pre-tool-use.js`**: Model switching was silently broken — the hook called `requestSwitch()` with the project's `notify` policy, which blocks for 10 seconds. A hook has a <200ms execution budget; it was being killed before it could write the modified payload, so `tool_input.model` was never applied. Fixed by removing `requestSwitch()` from the hook entirely (interactive policies belong in CLI commands, not hooks). The hook now logs the switch to stderr immediately and proceeds. `tool_input.model` is now always stamped on every Task spawn (not only when switching) so `post-tool-use` can reliably read the model for token tracking.
+- **`hooks/post-tool-use.js`**: `recordUsage()` was called without the `model` parameter, so the token log always recorded `sonnet` regardless of which model actually ran. Fixed to read `toolInput.model` (stamped by `pre-tool-use`) and pass it through.
+- **`templates/commands/tw-execute-phase.md`**: Wave display, spawn lines, team-mode auto-decision announcement, and wave results table now show the model tier per plan (read from `<complexity model="...">` in plan XML, fallback `sonnet`). Example: `PLAN-N-1 [haiku]  PLAN-N-2 [sonnet]`.
+- **`install/update.js`**: `collectFrameworkUpdates()` previously copied all framework files unconditionally — no content comparison, no per-file status. Replaced with content-diff logic: each file is compared byte-for-byte against the deployed copy and labelled ✅ (up to date), ⬆ (needs update), or ✨ (new file). Only changed files are written. Agents (`~/.claude/agents/`) were missing from the standard update path — now included. Return type changed from `string[]` to `{ lines, updatedCount, newCount, sameCount }`.
+- **`bin/threadwork.js`**: Added `--verify` flag to `threadwork update` — reports sync status of every framework file without applying any changes. Shows a summary line `N up to date, M need updating` and suggests `threadwork update` to apply.
+
 ### Added
 
 **Tier 1 — Core Enforcement Loop**
