@@ -8,6 +8,7 @@
     "threadwork": "./bin/threadwork.js"
   },
   "scripts": {
+    "setup": "node scripts/setup.js",
     "test": "node --test tests/unit/*.test.js",
     "test:integration": "node --test tests/integration/*.test.js",
     "test:all": "node --test tests/**/*.test.js",

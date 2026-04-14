@@ -204,7 +204,19 @@ export async function runInit(options) {
       lint: { enabled: true, blocking: lintLevel !== 'relaxed' },
       tests: { enabled: true, blocking: true, minCoverage },
       build: { enabled: false, blocking: false },
-      security: { enabled: true, blocking: false }
+      security: { enabled: true, blocking: false },
+      outputFilter: {
+        enabled: true,
+        maxFailures: 10,
+        maxErrorsPerGroup: 3,
+        maxLineLength: 200,
+        strategies: {
+          smartFiltering: true,
+          grouping: true,
+          truncation: true,
+          deduplication: true
+        }
+      }
     };
     writeFileSync(
       join(cwd, '.threadwork', 'state', 'quality-config.json'),

@@ -11,6 +11,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Nine upgrades across three tiers — Spec Enforcement, Knowledge, Design, Verification, and Autonomous Operation:**
 
+### Added (2026-04-14)
+
+**Output Filter — Token-efficient quality gate output**
+- `lib/output-filter.js`: New module — applies four strategies to command output before it is embedded in agent correction prompts: (1) **Smart Filtering** removes passing test lines, TAP boilerplate, and lint summary noise; (2) **Grouping** aggregates lint violations by rule name and TypeScript errors by file; (3) **Truncation** caps failures at `maxFailures` (default 10) and violations at `maxErrorsPerGroup` (default 3) per group, always appending `... +N more` counts; (4) **Deduplication** collapses identical test failure headers with `×N` occurrence counts. Exports `filterTestOutput`, `filterLintOutput`, `filterTypecheckOutput`, and `readFilterConfig`.
+- `lib/quality-gate.js`: `runTests()`, `runLint()`, and `runTypecheck()` now read the `outputFilter` config block and route raw command output through the filter when `enabled: true`. Falls back to original logic when disabled — zero behavioral change for projects that have not opted in.
+- `install/init.js`: `quality-config.json` now includes an `outputFilter` block (enabled by default) with all four strategies active and tunable limits (`maxFailures`, `maxErrorsPerGroup`, `maxLineLength`).
+
 ### Fixed (2026-04-13)
 
 - **`hooks/pre-tool-use.js`**: Model switching was silently broken — the hook called `requestSwitch()` with the project's `notify` policy, which blocks for 10 seconds. A hook has a <200ms execution budget; it was being killed before it could write the modified payload, so `tool_input.model` was never applied. Fixed by removing `requestSwitch()` from the hook entirely (interactive policies belong in CLI commands, not hooks). The hook now logs the switch to stderr immediately and proceeds. `tool_input.model` is now always stamped on every Task spawn (not only when switching) so `post-tool-use` can reliably read the model for token tracking.

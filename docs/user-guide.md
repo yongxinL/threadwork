@@ -868,7 +868,19 @@ threadwork-cc/
   "lint":      { "enabled": true, "blocking": true },
   "tests":     { "enabled": true, "blocking": true, "minCoverage": 80 },
   "build":     { "enabled": false, "blocking": false },
-  "security":  { "enabled": true, "blocking": false }
+  "security":  { "enabled": true, "blocking": false },
+  "outputFilter": {
+    "enabled": true,
+    "maxFailures": 10,
+    "maxErrorsPerGroup": 3,
+    "maxLineLength": 200,
+    "strategies": {
+      "smartFiltering": true,
+      "grouping": true,
+      "truncation": true,
+      "deduplication": true
+    }
+  }
 }
 ```
 
@@ -878,6 +890,42 @@ threadwork-cc/
 - `build` is disabled by default — enable it for production pipelines
 - `security` is non-blocking by default — findings are reported but don't halt work
 - Lint tool is auto-detected: `eslint` → `biome` → `oxlint` (first found wins)
+
+### Output Filter
+
+The `outputFilter` block in `quality-config.json` controls how raw command output is compressed before being embedded in agent correction prompts (Ralph Loop remediation blocks). It applies four strategies:
+
+| Strategy | What it removes / compresses | Safe to disable? |
+|----------|------------------------------|-----------------|
+| **Smart Filtering** | Passing test lines (`✔`, `ok N`), TAP boilerplate (`# pass`, `# tests`), lint summary lines (`N problems`) | Yes — raw output is passed through unchanged |
+| **Grouping** | Lint violations → aggregated by rule name; TypeScript errors → aggregated by file | Yes — flat list used instead |
+| **Truncation** | Caps failures at `maxFailures`; caps locations per group at `maxErrorsPerGroup`; always appends `... +N more` | Yes — full output passed |
+| **Deduplication** | Identical failure headers collapsed with `×N` count | Yes — duplicates retained |
+
+**What is never removed:** error messages, stack trace lines, file paths, line numbers, error codes. Only passing noise is filtered — the LLM always receives full failure context. The `... +N more` counts also tell the agent how many issues were omitted.
+
+**Tuning:**
+
+```json
+"outputFilter": {
+  "enabled": true,
+  "maxFailures": 20,          ← show up to 20 failure blocks (default 10)
+  "maxErrorsPerGroup": 5,     ← show 5 locations per lint rule / TS file (default 3)
+  "maxLineLength": 300,       ← longer lines before truncation (default 200)
+  "strategies": {
+    "smartFiltering": true,
+    "grouping": false,        ← disable grouping if you prefer flat lists
+    "truncation": true,
+    "deduplication": true
+  }
+}
+```
+
+**Disable entirely** (pass all raw output to the LLM unchanged):
+
+```json
+"outputFilter": { "enabled": false }
+```
 
 ### Skill tier
 

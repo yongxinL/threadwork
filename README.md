@@ -26,6 +26,8 @@ Nine upgrades across three tiers — spec enforcement, knowledge retention, desi
 - **Capability Gap Detection** — `scanPlanForGaps()` detects tasks referencing tools/APIs not covered by any spec. `/tw:readiness` runs a 7-point harness readiness audit.
 - **Autonomous Operation Mode** — three levels (`supervised`, `guided`, `autonomous`) control how much manual confirmation is needed. Safety rails always active. See `lib/autonomy.js` and `/tw:autonomy`.
 
+**Output Filter (2026-04-14):** Quality gate output sent to agents is now filtered by four strategies — Smart Filtering (removes passing test lines and noise), Grouping (lint errors by rule, TS errors by file), Truncation (first N failures with `+N more` counts), and Deduplication (collapses identical errors with ×N counts). Enabled by default; fully configurable or disable-able per project via `outputFilter` in `.threadwork/state/quality-config.json`. See `lib/output-filter.js`.
+
 **Upgrading from v0.3.x?** Run `threadwork update --to v0.3.2` — non-destructive, idempotent, 14 steps. See [docs/upgrade.md](docs/upgrade.md).
 
 **Patch fixes (2026-04-13):** Model switching now works correctly in hooks — the previous `notify` policy caused a 10-second block that killed the hook before the model override was written. The hook now switches immediately and always stamps `tool_input.model` so the token log correctly tracks which model ran each task. `threadwork update` gained a `--verify` flag and now does content-diff comparison before copying (only changed files are written; agents directory included). Wave display in `/tw:execute-phase` shows the model tier per plan.

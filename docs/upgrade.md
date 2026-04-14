@@ -4,6 +4,46 @@
 
 ---
 
+## v0.3.2 Patch — Output Filter (2026-04-14)
+
+If you are already running v0.3.2 and want the output filter feature, add the `outputFilter` block to your project's `.threadwork/state/quality-config.json`:
+
+```json
+{
+  "outputFilter": {
+    "enabled": true,
+    "maxFailures": 10,
+    "maxErrorsPerGroup": 3,
+    "maxLineLength": 200,
+    "strategies": {
+      "smartFiltering": true,
+      "grouping": true,
+      "truncation": true,
+      "deduplication": true
+    }
+  }
+}
+```
+
+Then run `threadwork update` to pull in the updated `lib/output-filter.js` and `lib/quality-gate.js`.
+
+**Tuning options:**
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `enabled` | `true` | Master toggle — set `false` to disable all filtering |
+| `maxFailures` | `10` | Max test failure blocks shown before `+N more` |
+| `maxErrorsPerGroup` | `3` | Max file/rule locations per lint or TS group |
+| `maxLineLength` | `200` | Truncation limit per output line (characters) |
+| `strategies.smartFiltering` | `true` | Remove passing test lines and boilerplate noise |
+| `strategies.grouping` | `true` | Aggregate lint by rule, TS errors by file |
+| `strategies.truncation` | `true` | Cap output size with omission counts |
+| `strategies.deduplication` | `true` | Collapse repeated messages with ×N counts |
+
+New installations get this config automatically via `threadwork init`.
+
+---
+
 ## Upgrading from v0.3.x → v0.3.2
 
 ### Prerequisites
