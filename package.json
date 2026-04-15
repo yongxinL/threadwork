@@ -1,6 +1,6 @@
 {
   "name": "threadwork-cc",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Production-grade AI coding workflow tool — spec-driven orchestration, hook-enforced quality gates, token budgeting, and structured session handoffs",
   "type": "module",
   "main": "./lib/index.js",

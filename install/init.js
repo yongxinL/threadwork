@@ -159,6 +159,7 @@ export async function runInit(options) {
     // ── Scaffold .threadwork/ ─────────────────────────────────────────────
     const dirs = [
       '.threadwork/state/phases',
+      '.threadwork/logs',
       '.threadwork/specs/frontend',
       '.threadwork/specs/backend',
       '.threadwork/specs/testing',
@@ -255,10 +256,52 @@ export async function runInit(options) {
       }
     }
 
-    // Copy starter spec templates
-    const specsTemplateDir = join(__dirname, '..', 'templates', 'specs');
-    if (existsSync(specsTemplateDir)) {
-      cpSync(specsTemplateDir, join(cwd, '.threadwork', 'specs'), { recursive: true });
+    // Copy starter spec templates (core/ → project specs)
+    const coreSpecsDir = join(__dirname, '..', 'templates', 'specs', 'core');
+    if (existsSync(coreSpecsDir)) {
+      cpSync(coreSpecsDir, join(cwd, '.threadwork', 'specs'), { recursive: true });
+    }
+
+    // Seed stack-matched learned specs from the Threadwork knowledge base
+    const learnedDir = join(__dirname, '..', 'templates', 'specs', 'learned');
+    if (existsSync(learnedDir)) {
+      const stackLower = (techStack ?? '').toLowerCase();
+      const stackTagMap = {
+        'next.js': ['typescript', 'nextjs', 'react', 'prisma'],
+        'nextjs': ['typescript', 'nextjs', 'react', 'prisma'],
+        'react': ['typescript', 'react'],
+        'express': ['typescript', 'express'],
+        'fastapi': ['python', 'fastapi', 'pydantic'],
+        'django': ['python', 'django'],
+        'python': ['python'],
+        'typescript': ['typescript'],
+      };
+      let matchTags = [];
+      for (const [key, tags] of Object.entries(stackTagMap)) {
+        if (stackLower.includes(key)) { matchTags = tags; break; }
+      }
+
+      // Copy learned specs whose tags overlap with project stack
+      for (const subdir of ['patterns', 'anti-patterns', 'architecture']) {
+        const srcDir = join(learnedDir, subdir);
+        if (!existsSync(srcDir)) continue;
+        for (const file of readdirSync(srcDir)) {
+          if (!file.endsWith('.md')) continue;
+          try {
+            const raw = readFileSync(join(srcDir, file), 'utf8');
+            // Quick tag extraction from frontmatter without full parser
+            const tagMatch = raw.match(/tags:\s*\[([^\]]*)\]/);
+            if (!tagMatch) continue;
+            const fileTags = tagMatch[1].toLowerCase().split(',').map(t => t.trim());
+            const isMatch = matchTags.length === 0 || fileTags.some(t => matchTags.includes(t));
+            if (isMatch) {
+              const destDir = join(cwd, '.threadwork', 'specs', 'learned', subdir);
+              mkdirSync(destDir, { recursive: true });
+              cpSync(join(srcDir, file), join(destDir, file));
+            }
+          } catch { /* skip unparseable files */ }
+        }
+      }
     }
 
     // Copy guide to project root — CLAUDE.md for Claude Code, AGENTS.md for Codex

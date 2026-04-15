@@ -26,6 +26,7 @@ export function writeGitignoreBlock(projectDir) {
     '.threadwork/state/checkpoint.json',
     '.threadwork/state/active-task.json',
     '.threadwork/state/hook-log.json',
+    '.threadwork/logs/',
     '.threadwork/state/ralph-state.json',
     '.threadwork/state/token-log.json',
     '.threadwork/state/phases/**/execution-log.json',

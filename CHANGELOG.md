@@ -7,24 +7,76 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.3.2] — 2026-03-20
+## [0.3.3] — 2026-04-15
 
-**Nine upgrades across three tiers — Spec Enforcement, Knowledge, Design, Verification, and Autonomous Operation:**
+**Two-tier spec library, AI anti-pattern detection, knowledge harvest engine, and token-efficient quality gate output.**
 
-### Added (2026-04-14)
+### Added
+
+**Two-Tier Spec Library**
+- `templates/specs/` restructured into `core/` (curated baseline), `learned/` (project-harvested), and `proposals/` (pending review)
+- Tier 1 core specs: language-agnostic rules (API design, auth, DB schema, testing). No code examples — fit within routing map budget
+- Tier 2 stack-scoped reference specs: `ts-patterns.md` (TypeScript/Next.js/Prisma/Zod) and `python-patterns.md` (FastAPI/Django/SQLAlchemy) with concrete code examples and enforcement rules
+- New `backend/db-schema.md` core spec: 7 rules, PK strategy table, index selection, zero-downtime migration golden rule, 12-row anti-pattern table
+
+**Stack-Aware Spec Injection**
+- `lib/spec-engine.js`: `getRelevantSpecs()` reads `project.json.techStack` and boosts relevance by +3 for specs whose tags match the project stack
+- Stack mapping: Next.js/React/Express → TypeScript specs; FastAPI/Django → Python specs
+- Tier 2 specs surface automatically for matching projects without manual configuration
+
+**Knowledge Harvest Engine**
+- `lib/harvest.js`: New module — extracts reusable patterns from 5 sources: plan decisions, Ralph Loop remediation log, knowledge notes, proven enforcement rules, and spec divergence
+- `templates/commands/tw-harvest.md`: New command — `review` (interactive approve/reject), `list` (show pending), `stats` (library statistics), `approve <id>`, `reject <id>`
+- `templates/commands/tw-done.md`: Step 5 now runs knowledge harvest at session end, writing proposals to the Threadwork repo
+
+**Reviewer Anti-Pattern Detection**
+- `templates/agents/tw-reviewer.md`: Check 7 added — 12 named anti-patterns covering API (verb URLs, 200 errors, no validation, stack traces, inconsistent envelope), database (no FK index, SQL injection), auth (localStorage tokens, long-lived access, hardcoded secrets), and testing (internal mocks, no error paths)
+- Security items (`auth_*`, `api_stack_trace`, `db_string_concat_sql`) are `critical` severity — trigger `request_changes` automatically
+
+**Init Seeding from Learned Library**
+- `install/init.js`: `threadwork init` now seeds from `core/` (always) + stack-matched specs from `learned/` (tag filtering against project techStack)
+- Projects start with knowledge accumulated from all previous projects
 
 **Output Filter — Token-efficient quality gate output**
 - `lib/output-filter.js`: New module — applies four strategies to command output before it is embedded in agent correction prompts: (1) **Smart Filtering** removes passing test lines, TAP boilerplate, and lint summary noise; (2) **Grouping** aggregates lint violations by rule name and TypeScript errors by file; (3) **Truncation** caps failures at `maxFailures` (default 10) and violations at `maxErrorsPerGroup` (default 3) per group, always appending `... +N more` counts; (4) **Deduplication** collapses identical test failure headers with `×N` occurrence counts. Exports `filterTestOutput`, `filterLintOutput`, `filterTypecheckOutput`, and `readFilterConfig`.
 - `lib/quality-gate.js`: `runTests()`, `runLint()`, and `runTypecheck()` now read the `outputFilter` config block and route raw command output through the filter when `enabled: true`. Falls back to original logic when disabled — zero behavioral change for projects that have not opted in.
 - `install/init.js`: `quality-config.json` now includes an `outputFilter` block (enabled by default) with all four strategies active and tunable limits (`maxFailures`, `maxErrorsPerGroup`, `maxLineLength`).
 
-### Fixed (2026-04-13)
+### Fixed
 
 - **`hooks/pre-tool-use.js`**: Model switching was silently broken — the hook called `requestSwitch()` with the project's `notify` policy, which blocks for 10 seconds. A hook has a <200ms execution budget; it was being killed before it could write the modified payload, so `tool_input.model` was never applied. Fixed by removing `requestSwitch()` from the hook entirely (interactive policies belong in CLI commands, not hooks). The hook now logs the switch to stderr immediately and proceeds. `tool_input.model` is now always stamped on every Task spawn (not only when switching) so `post-tool-use` can reliably read the model for token tracking.
 - **`hooks/post-tool-use.js`**: `recordUsage()` was called without the `model` parameter, so the token log always recorded `sonnet` regardless of which model actually ran. Fixed to read `toolInput.model` (stamped by `pre-tool-use`) and pass it through.
 - **`templates/commands/tw-execute-phase.md`**: Wave display, spawn lines, team-mode auto-decision announcement, and wave results table now show the model tier per plan (read from `<complexity model="...">` in plan XML, fallback `sonnet`). Example: `PLAN-N-1 [haiku]  PLAN-N-2 [sonnet]`.
 - **`install/update.js`**: `collectFrameworkUpdates()` previously copied all framework files unconditionally — no content comparison, no per-file status. Replaced with content-diff logic: each file is compared byte-for-byte against the deployed copy and labelled ✅ (up to date), ⬆ (needs update), or ✨ (new file). Only changed files are written. Agents (`~/.claude/agents/`) were missing from the standard update path — now included. Return type changed from `string[]` to `{ lines, updatedCount, newCount, sameCount }`.
 - **`bin/threadwork.js`**: Added `--verify` flag to `threadwork update` — reports sync status of every framework file without applying any changes. Shows a summary line `N up to date, M need updating` and suggests `threadwork update` to apply.
+
+### Changed
+
+- `install/update.js`: Template paths updated for `core/` restructure (`enforcement/`, `frontend/` refs)
+- `templates/specs/core/index.md`: All specs now carry `specId` (SPEC:be-001, SPEC:be-002, SPEC:be-003, SPEC:test-001, SPEC:be-ts-001, SPEC:be-py-001)
+
+**Activity Log & Observability**
+- `lib/logger.js`: New module — centralized structured logger for lib/ modules. Writes JSONL entries to `.threadwork/logs/threadwork.log` using the same format as `hook-log.json` so the viewer merges both sources seamlessly. Exports `log(level, component, message, meta)`, `debug`, `info`, `warn`, `error` shorthands, and `readAllLogs({ minLevel, since, tail })` for programmatic access.
+- `install/log.js`: New module — CLI log viewer. Reads `.threadwork/state/hook-log.json` (hooks) and `.threadwork/logs/threadwork.log` (lib/ modules), merges by timestamp, filters by level/since/tail, and renders with ANSI color (level-aware: gray=DEBUG, default=INFO, yellow=WARN, red+bold=ERROR). Supports static mode (print and exit) and follow mode (poll every 500ms, Ctrl+C to stop).
+- `bin/threadwork.js`: `threadwork log` command added with five options: `--level debug|info|warn|error` (default: `info`), `--tail N` (default: 50), `--since 1h|30m|<date>`, `--follow` (live-tail mode), `--json` (raw JSONL output, pipe-friendly).
+- `install/init.js`: `.threadwork/logs/` directory added to the scaffold. Created on `threadwork init` alongside existing state directories.
+- `templates/commands/tw-log.md`: New `/tw:log` slash command — reads both log sources, merges by timestamp, displays as a formatted table with WARN+ entries highlighted, and prints a summary line (`Total entries: N | ERROR: X | WARN: Y | INFO: Z`).
+
+### Removed
+
+- `docs/blueprint_v0.1.0.md`, `docs/blueprint_v0.2.0.md`, `docs/blueprint_v0.3.0.md`, `docs/blueprint_v0.3.2.md` — legacy blueprint documents removed. Architecture and upgrade docs retained.
+
+### Migration Command
+
+```bash
+threadwork update --to v0.3.3
+```
+
+---
+
+## [0.3.2] — 2026-03-20
+
+**Nine upgrades across three tiers — Spec Enforcement, Knowledge, Design, Verification, and Autonomous Operation:**
 
 ### Added
 

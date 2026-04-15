@@ -6,7 +6,36 @@ Threadwork weaves tasks, specs, and sessions into a single thread — a structur
 
 ---
 
-## What's New in v0.3.2
+## What's New in v0.3.3
+
+**Self-Evolution: Threadwork learns from your projects.**
+
+Three new capabilities turn the framework into a growing knowledge base:
+
+| Feature | What It Does |
+|---------|-------------|
+| **Two-Tier Spec Library** | Core specs (language-agnostic rules, ~150 tokens) + stack-scoped reference specs (concrete code examples, on-demand). Tier 2 specs carry enforcement rules targeting specific file extensions. |
+| **Stack-Aware Spec Injection** | `getRelevantSpecs()` reads `project.json.techStack` and boosts relevance for matching specs. A Next.js project surfaces TypeScript patterns; a FastAPI project surfaces Python patterns. |
+| **Knowledge Harvest** | `/tw:done` extracts reusable patterns from plan decisions, Ralph Loop failures, knowledge notes, proven rules, and spec divergence — writes proposals to the Threadwork repo. |
+| **Harvest Review** | `/tw:harvest review` lets you approve/reject proposals interactively, then commit learned specs to the repo for all future projects. |
+| **Reviewer Anti-Patterns** | `tw-reviewer` gains Check 7: 12 named anti-patterns (API, DB, auth, testing) that AI agents frequently introduce. Security items are `critical` severity. |
+| **Directory Restructure** | `templates/specs/` reorganized into `core/` (curated baseline), `learned/` (project-harvested), `proposals/` (pending review). |
+
+**The evolution loop:**
+```
+Project A → /tw:done → harvest proposals → /tw:harvest review → learned specs committed
+                                                                        ↓
+Project B → threadwork init → seeds from core/ + stack-matched learned/ → starts smarter
+```
+
+**Upgrading from v0.3.2?** Run `threadwork update --to v0.3.3`. See [docs/upgrade.md](docs/upgrade.md).
+
+---
+
+## Previous Releases
+
+<details>
+<summary>v0.3.2 — Spec Enforcement, Knowledge, Design, Verification, Autonomy</summary>
 
 Nine upgrades across three tiers — spec enforcement, knowledge retention, design fidelity, runtime verification, and autonomous operation:
 
@@ -59,6 +88,8 @@ Five targeted upgrades informed by LangChain's harness taxonomy and OpenAI's har
 | **Execution Plan Decision Logs** | Executor agents append `<decisions>` blocks to plan XML as they work, capturing _why_ choices were made. Handoff Section 4 is now auto-populated from these. | Architectural decisions survive session boundaries |
 
 **Upgrading from v0.1.x?** Run `threadwork update --to v0.2.0` — non-destructive, idempotent. See [docs/upgrade.md](docs/upgrade.md).
+
+</details>
 
 ---
 
@@ -148,7 +179,9 @@ npm unlink -g threadwork-cc
 | **Token budgeting** | Tracks usage including spec fetch overhead; warns at 80%/90%; shows variance vs estimates per task |
 | **Session handoffs** | `/tw:done` generates a 10-section handoff. Section 4 (Key Decisions) auto-populated from plan XML `<decisions>` blocks |
 | **Skill tiers** | `beginner` / `advanced` / `ninja` — controls verbosity across all outputs uniformly |
-| **Spec library** | Growing library of patterns injected per-task. AI proposes updates; you approve them. High-confidence proposals promote to the global Store |
+| **Two-tier spec library** | Core specs (language-agnostic rules) + stack-scoped references (concrete code examples). Stack-aware injection surfaces the right patterns for your tech stack |
+| **Self-evolution** | `/tw:done` harvests reusable patterns; `/tw:harvest review` curates them. Learned specs commit to the Threadwork repo and seed future projects |
+| **Activity log** | `threadwork log` and `/tw:log` expose a merged, level-filtered view of all hook events, quality gate results, token warnings, and lib/ module traces. Two log sources merged by timestamp: `hook-log.json` (hooks) + `threadwork.log` (lib/ modules) |
 | **Cross-session Store** | `~/.threadwork/store/` persists patterns, edge cases, and conventions across all projects |
 | **Background entropy collector** | After each wave, the 9th agent scans diffs for naming drift, orphaned files, and cross-output inconsistencies. Auto-fixes minor issues |
 | **Parallel execution** | Wave-based parallel subagent execution with topological dependency ordering |
@@ -239,10 +272,13 @@ Team mode runs multiple agents simultaneously — token consumption scales with 
 /tw:recover               Restore from checkpoint after crash
 ```
 
-### Knowledge & Memory
+### Knowledge & Self-Evolution
 ```
 /tw:recall <query>        Search journals, specs, handoffs, history
 /tw:specs [subcommand]    Manage spec library
+/tw:harvest review        Review and approve learned specs harvested from projects
+/tw:harvest list          List pending harvest proposals
+/tw:harvest stats         Learned library statistics and contributing projects
 /tw:journal [subcommand]  View/search session journals
 /tw:store                 Cross-session Store dashboard (patterns, edge-cases, conventions)
 /tw:store list            List all Store entries with confidence scores
@@ -260,6 +296,22 @@ Team mode runs multiple agents simultaneously — token consumption scales with 
 /tw:cost history          Cost across all sessions from committed session-summary files
 /tw:model                 Current model assignments, switch policy, session switch log
 /tw:model policy <mode>   Change switch policy mid-session (auto/notify/approve)
+```
+
+### Observability
+```
+/tw:log                           Last 20 WARN+ entries — quick error summary
+/tw:log --level debug             Show all entries including DEBUG traces
+/tw:log --tail 100 --since 1h    Last 100 entries from the past hour
+/tw:log --errors-only             ERROR entries only
+```
+
+CLI equivalent:
+```bash
+threadwork log                    # last 50 INFO+ entries
+threadwork log --level warn       # WARN and ERROR only
+threadwork log --follow           # live-tail (Ctrl+C to stop)
+threadwork log --json             # raw JSONL output (pipe-friendly)
 ```
 
 ### Blueprint Management
@@ -365,12 +417,28 @@ The resume prompt contains everything needed to restore context — no file read
 ## Directory Structure
 
 ```
-.threadwork/
-├── state/              project.json, checkpoint.json, token-log.json, quality-config.json
-│   └── phases/         per-phase context, plans (with <decisions>), execution logs, entropy reports
-├── specs/              spec library — frontend, backend, testing, proposals (with SPEC: IDs)
-├── store/              cross-session Store (patterns/, edge-cases/, conventions/, store-index.json)
-└── workspace/          journals, handoffs (auto-enriched Section 4), archive
+.threadwork/                 (per-project, created by threadwork init)
+├── state/                   project.json, checkpoint.json, token-log.json, quality-config.json
+│   └── phases/              per-phase context, plans (with <decisions>), execution logs
+├── specs/                   project spec library (seeded from core/ + stack-matched learned/)
+│   ├── backend/             API, auth, DB, stack-specific patterns
+│   ├── frontend/            React, styling, design refs
+│   ├── testing/             Testing standards
+│   ├── enforcement/         Machine-checkable rules
+│   ├── learned/             Stack-matched specs from Threadwork knowledge base
+│   └── proposals/           AI-proposed updates (pending review)
+├── store/                   cross-session Store (patterns/, edge-cases/, conventions/)
+└── workspace/               journals, handoffs, archive
+```
+
+```
+templates/specs/             (in Threadwork repo — the shared knowledge base)
+├── core/                    curated baseline specs (always seeded)
+├── learned/                 project-harvested patterns (grows over time)
+│   ├── patterns/
+│   ├── anti-patterns/
+│   └── architecture/
+└── proposals/               pending human review (from /tw:done harvest)
 ```
 
 The global Store lives at `~/.threadwork/store/` — shared across all your projects.
@@ -389,7 +457,8 @@ The global Store lives at `~/.threadwork/store/` — shared across all your proj
 | `tw-debugger` | Opus | Hypothesis-driven debugging |
 | `tw-dispatch` | Haiku | Parallel work coordinator |
 | `tw-spec-writer` | Haiku | Writes spec entries from detected patterns |
-| `tw-entropy-collector` | Haiku | **New in v0.2.0** — Post-wave codebase integrity scan |
+| `tw-reviewer` | Sonnet | Semantic code review with anti-pattern detection (7 checks + 12 AI anti-patterns) |
+| `tw-entropy-collector` | Haiku | Post-wave codebase integrity scan |
 
 All agents receive skill tier instructions, token budget status, and a spec routing map automatically via the pre-tool-use hook.
 
@@ -481,17 +550,17 @@ Run `/tw:blueprint-lock` before making blueprint edits to establish a clean base
 
 ---
 
-## Upgrading from v0.1.x
+## Upgrading
 
 ```bash
-# Upgrade to v0.2.0
+# From v0.3.2 → v0.3.3
+threadwork update --to v0.3.3
+
+# From older versions — run sequentially
 threadwork update --to v0.2.0
-
-# Then upgrade to v0.3.0
 threadwork update --to v0.3.0
-
-# Then upgrade to v0.3.2
 threadwork update --to v0.3.2
+threadwork update --to v0.3.3
 ```
 
 All migration commands are idempotent — safe to run multiple times. User specs, journals, handoffs, and plan files are **never modified**. See [docs/upgrade.md](docs/upgrade.md) for the full migration guide including step-by-step details and troubleshooting.

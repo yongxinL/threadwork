@@ -4,6 +4,64 @@
 
 ---
 
+## v0.3.2 → v0.3.3 — Self-Evolution (2026-04-15)
+
+Run:
+```bash
+threadwork update --to v0.3.3
+```
+
+### What changes
+
+| Step | What | Impact |
+|------|------|--------|
+| 1 | Spec templates restructured: `templates/specs/` → `templates/specs/core/` | Internal to Threadwork repo — no project-side impact |
+| 2 | New learned spec directories: `templates/specs/learned/`, `templates/specs/proposals/` | Internal to Threadwork repo |
+| 3 | New `lib/harvest.js` copied to `.threadwork/lib/` | Knowledge harvest engine for `/tw:done` |
+| 4 | Updated `lib/spec-engine.js` with stack-aware relevance boosting | Better spec matching based on project techStack |
+| 5 | New `/tw:harvest` command installed | Review/approve/reject learned specs |
+| 6 | Updated `/tw:done` command with harvest step | Auto-extracts knowledge at session end |
+| 7 | Updated `tw-reviewer.md` with Check 7: Anti-Pattern Detection | 12 named anti-patterns in code review |
+| 8 | New core specs: `backend/db-schema.md`, `backend/ts-patterns.md`, `backend/python-patterns.md` | Richer starter specs with enforcement rules |
+| 9 | Updated core specs: `backend/api-design.md`, `backend/auth.md`, `testing/testing-standards.md` | Two-tier format: agnostic rules + specIds |
+
+### Manual steps (optional)
+
+**Refresh your project's starter specs:**
+
+If you want the upgraded Tier 1 specs in an existing project (recommended):
+
+```bash
+# From your project directory:
+threadwork update
+```
+
+This copies new/updated framework files (hooks, lib, commands, agents) but does NOT overwrite your custom specs. To also get the new core specs:
+
+```bash
+# Preview what's new
+threadwork update --verify
+
+# Apply updates
+threadwork update
+```
+
+New specs (`db-schema.md`, `ts-patterns.md`, `python-patterns.md`) are added automatically. Existing specs (`api-design.md`, `auth.md`, `testing-standards.md`) are NOT overwritten — your customizations are preserved. To get the upgraded versions, manually copy them:
+
+```bash
+cp templates/specs/core/backend/api-design.md .threadwork/specs/backend/api-design.md
+cp templates/specs/core/backend/auth.md .threadwork/specs/backend/auth.md
+cp templates/specs/core/testing/testing-standards.md .threadwork/specs/testing/testing-standards.md
+```
+
+### No breaking changes
+
+- Existing projects continue to work without any changes
+- The harvest step in `/tw:done` is additive — it writes proposals, never modifies existing project files
+- Stack-aware relevance boosting is backward-compatible — projects without `techStack` in `project.json` use keyword-only scoring (same as before)
+
+---
+
 ## v0.3.2 Patch — Output Filter (2026-04-14)
 
 If you are already running v0.3.2 and want the output filter feature, add the `outputFilter` block to your project's `.threadwork/state/quality-config.json`:

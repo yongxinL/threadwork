@@ -68,6 +68,27 @@ If design references are provided:
 - **reference** fidelity: Only flag if implementation diverges completely from design intent
 - Read/view the design file before making fidelity judgments
 
+### Check 7: Common AI Anti-Patterns
+
+Flag these patterns that AI agents frequently introduce. Only flag patterns **actually present in the diff** — do not speculate.
+
+| Check Name | Anti-Pattern | Correct Pattern | Severity |
+|---|---|---|---|
+| `api_verb_in_url` | Verbs in URL paths (`/api/getUsers`) | Resource nouns (`/api/users`) | major |
+| `api_200_error` | HTTP 200 for error responses | Appropriate 4xx/5xx status | major |
+| `api_no_validation` | Missing input validation on POST/PUT/PATCH | Validate at API boundary | major |
+| `api_stack_trace` | Stack traces in response bodies | Safe error message + internal log | critical |
+| `api_inconsistent_envelope` | Different response shapes per endpoint | Consistent `{data}` / `{error}` envelope | major |
+| `db_no_fk_index` | Foreign key column without index | Index every FK column | major |
+| `db_string_concat_sql` | String concatenation in SQL queries | Parameterized queries | critical |
+| `auth_localstorage_token` | Auth tokens in localStorage | httpOnly cookies | critical |
+| `auth_long_lived_access` | Access token lifetime >30 min | Short-lived (<=15 min) + refresh | critical |
+| `auth_hardcoded_secret` | Secrets in source code | Environment variables | critical |
+| `test_internal_mock` | Mocking internal helpers instead of boundaries | Mock DB/HTTP/queue clients | major |
+| `test_no_error_path` | Only happy-path tests | Explicit error path test per function | major |
+
+Each flagged anti-pattern produces one issue with `check: "anti_pattern"` and the check name in the message.
+
 ---
 
 ## Output Format
@@ -79,7 +100,7 @@ Output ONLY valid JSON. No prose before or after.
   "decision": "approve" | "request_changes",
   "issues": [
     {
-      "check": "requirement_alignment" | "spec_intent" | "design_quality" | "duplication" | "knowledge_note" | "design_fidelity",
+      "check": "requirement_alignment" | "spec_intent" | "design_quality" | "duplication" | "knowledge_note" | "design_fidelity" | "anti_pattern",
       "severity": "critical" | "major" | "minor",
       "message": "Clear description of the issue",
       "file": "src/path/to/file.ts",

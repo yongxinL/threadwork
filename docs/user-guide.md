@@ -26,6 +26,8 @@
 18. [Cost & Model Tier Management](#18-cost--model-tier-management)
 19. [Blueprint Evolution](#19-blueprint-evolution)
 20. [Design Reference System](#20-design-reference-system)
+21. [Self-Evolution: Knowledge Harvest](#21-self-evolution-knowledge-harvest)
+22. [Activity Log & Debugging](#22-activity-log--debugging)
 
 ---
 
@@ -374,6 +376,24 @@ All commands use the `/tw:` prefix. They are installed to `~/.claude/commands/tw
 | `/tw:blueprint-diff --since-phase <N> <file>` | Analyze impact on remaining phases only |
 | `/tw:blueprint-lock [note]` | Snapshot current blueprint as versioned baseline |
 
+### Observability
+
+| Command | Description |
+|---------|-------------|
+| `/tw:log` | Last 20 WARN+ entries — quick error/warning summary across hooks and lib/ modules |
+| `/tw:log --level debug` | All entries including verbose DEBUG traces from lib/ modules |
+| `/tw:log --tail 100 --since 1h` | Last 100 entries from the past hour |
+| `/tw:log --errors-only` | ERROR entries only |
+
+CLI equivalent (outside Claude Code):
+
+```bash
+threadwork log                   # last 50 INFO+ entries
+threadwork log --level warn      # WARN and ERROR only
+threadwork log --follow          # live-tail (Ctrl+C to stop)
+threadwork log --json            # raw JSONL output — one object per line
+```
+
 ### Configuration
 
 | Command | Description |
@@ -602,43 +622,71 @@ Reads `.threadwork/state/checkpoint.json` and the latest handoff to reconstruct 
 
 Specs are the long-term memory of your project's conventions. They tell the AI how your project works — not what to build, but how to build it.
 
-### What specs contain
+### Two-Tier Architecture (v0.3.3)
+
+Specs are organized into two tiers:
+
+**Tier 1 — Core specs** (language-agnostic, always available):
+- Rules, tables, and principles without code examples
+- Fit within the routing map budget (~150 tokens)
+- Tags span all stacks: `[api, rest, http, backend, fastapi, express, django]`
+
+**Tier 2 — Stack-scoped references** (on-demand via `spec_fetch`):
+- Concrete, runnable code examples for a specific stack
+- Enforcement rules live here (they target specific file extensions)
+- Tags are stack-specific: `[typescript, nextjs, prisma]` or `[python, fastapi, pydantic]`
 
 Each spec is a markdown file with YAML frontmatter:
 
 ```markdown
 ---
-title: API Design Patterns
-tags: [backend, api, rest]
-applies_to: [api routes, controllers, middleware]
+domain: backend
+name: api-design
+specId: SPEC:be-001
+updated: 2026-04-15
+confidence: 0.95
+tags: [api, rest, http, endpoint, route, service, backend]
+rules:
+  - type: grep_must_not_exist
+    pattern: "stackTrace|stack_trace"
+    files: "src/**/*.{ts,py}"
+    message: "Never expose stack traces in API responses (SPEC:be-001)"
 ---
 
-# API Design Patterns
+# API Design Standards
 
-## Route Structure
-All routes follow REST conventions...
+## 7 Iron Rules
+1. Resources map to domain concepts, not database tables...
 ```
 
-Starter specs are installed at `threadwork init` across four categories:
+### Starter specs
 
-| Category | Content |
-|----------|---------|
-| `frontend/react-patterns.md` | Component structure, hooks, state management |
-| `frontend/styling.md` | CSS conventions, class naming, responsive patterns |
-| `backend/api-design.md` | REST conventions, error formats, pagination |
-| `backend/auth.md` | JWT with jose, httpOnly cookies, bcrypt ×12, refresh rotation |
-| `testing/testing-standards.md` | Test file structure, coverage requirements, mocking strategy |
+Installed at `threadwork init` from `templates/specs/core/`:
 
-### How injection works
+| Tier | Spec | Content |
+|------|------|---------|
+| 1 | `backend/api-design.md` (SPEC:be-001) | 7 iron rules, HTTP status table, response envelope, anti-pattern table |
+| 1 | `backend/auth.md` (SPEC:be-002) | JWT security principles, middleware ordering, auth method selection |
+| 1 | `backend/db-schema.md` (SPEC:be-003) | 7 core rules, PK strategy, indexes, zero-downtime migrations |
+| 1 | `testing/testing-standards.md` (SPEC:test-001) | Testing pyramid, 7 rules, endpoint coverage matrix, isolation strategies |
+| 2 | `backend/ts-patterns.md` (SPEC:be-ts-001) | Zod, jose, bcrypt, Prisma, httpOnly cookies, Jest/Vitest patterns |
+| 2 | `backend/python-patterns.md` (SPEC:be-py-001) | Pydantic, FastAPI, SQLAlchemy, Alembic, factory_boy, Django patterns |
+| — | `frontend/react-patterns.md` | Component structure, hooks, composition, typed props |
+| — | `frontend/styling.md` | CSS conventions, responsive patterns |
+
+Additionally, `threadwork init` seeds stack-matched specs from `templates/specs/learned/` — patterns harvested from previous projects that match your tech stack.
+
+### Stack-aware injection
 
 The `pre-tool-use` hook fires before every `Task()` call. It:
 
 1. Reads all specs from `.threadwork/specs/`
-2. Matches specs to the task by keyword overlap (task description vs spec `applies_to` and `tags`)
-3. Builds an injection block capped at 8K tokens
-4. Prepends it to the agent prompt
+2. Matches specs to the task by keyword + tag overlap
+3. Reads `project.json.techStack` and boosts relevance for matching Tier 2 specs (+3 score)
+4. Builds a routing map (~150 tokens) listing the top 5 relevant specs
+5. Agents fetch full spec content on demand via `spec_fetch`
 
-The agent never has to ask "what are our conventions?" — it just knows.
+A Next.js project surfaces `ts-patterns.md` automatically; a FastAPI project surfaces `python-patterns.md`.
 
 ### Managing specs
 
@@ -648,20 +696,18 @@ The agent never has to ask "what are our conventions?" — it just knows.
 /tw:specs search "authentication"  # find specs by content
 /tw:specs add                      # interactively create a new spec
 /tw:specs edit backend/auth        # edit an existing spec
-/tw:specs review                   # review pending AI-proposed updates
+/tw:specs proposals                # list pending AI-proposed updates
+/tw:specs accept <id>              # approve a proposal
 ```
 
 ### AI-proposed spec updates
 
-When the `tw-spec-writer` agent notices a new pattern in your code that doesn't match any existing spec, it proposes a spec update using `proposeSpecUpdate()`. Proposals are stored in `.threadwork/specs/proposals/`.
+When the Ralph Loop catches repeated failures or the `tw-spec-writer` agent notices new patterns, spec updates are proposed via `proposeSpecUpdate()`. Proposals are stored in `.threadwork/specs/proposals/`.
 
-Review and accept them with:
-
-```
-/tw:specs review
-```
-
-You approve or reject each proposal. Accepted proposals are merged into the relevant spec file.
+Proposals gain confidence over time:
+- Initial: 0.3 (from Ralph Loop)
+- Developer accepts: 0.7
+- Survives 3+ sessions: auto-promoted to global Store (0.85)
 
 ---
 
@@ -713,6 +759,18 @@ This is why every agent automatically follows your conventions and knows the bud
 6. After 5 failed retries: escalates with an error message, marks the plan as FAILED
 
 **Key guarantee:** All hooks catch errors and exit 0. Hooks never crash your session. Quality gate failures result in retry prompts, not session crashes.
+
+### Structured logging
+
+Every hook writes structured log entries to `.threadwork/state/hook-log.json` (JSONL format — one JSON object per line). Lib/ modules (`quality-gate`, `spec-engine`, `harvest`) write to `.threadwork/logs/threadwork.log` using the same format. Both sources are merged and displayed together by `threadwork log` and `/tw:log`.
+
+```bash
+threadwork log                    # quick view: last 50 INFO+ entries
+threadwork log --level warn       # see only warnings and errors
+threadwork log --follow           # live-tail during active session
+```
+
+See [Section 22 — Activity Log & Debugging](#22-activity-log--debugging) for the full reference.
 
 ### Codex compatibility
 
@@ -785,13 +843,15 @@ threadwork-cc/
 │   ├── doc-freshness.js       Doc staleness detection via file reference analysis
 │   ├── design-ref.js          Design reference injection — HTML/PNG/SVG wireframes into prompts
 │   ├── verification-profile.js Runtime verification profiles — smoke tests for built artifacts
-│   └── autonomy.js            Autonomous operation mode — 3 levels, safety rails
+│   ├── autonomy.js            Autonomous operation mode — 3 levels, safety rails
+│   └── logger.js              Centralized structured logger — writes JSONL to .threadwork/logs/
 ├── install/
 │   ├── init.js                Interactive setup — 6 questions
 │   ├── claude-code.js         Settings.json hook merge, commands + agents install
 │   ├── codex.js               AGENTS.md injection
 │   ├── update.js              Framework file updates (preserves user specs)
-│   └── status.js              CLI status dashboard
+│   ├── status.js              CLI status dashboard
+│   └── log.js                 CLI log viewer — merges hook-log.json + threadwork.log
 ├── templates/
 │   ├── commands/              28 slash command markdown files
 │   ├── agents/                10 agent definition files
@@ -819,6 +879,8 @@ threadwork-cc/
 │           ├── deps.json      Plan dependency graph
 │           ├── execution-log.json  Wave execution results
 │           └── verification.md    /tw:verify-phase N output
+├── logs/
+│   └── threadwork.log         Structured JSONL log from lib/ modules (quality-gate, spec-engine, harvest)
 ├── specs/
 │   ├── frontend/              react-patterns.md, styling.md
 │   ├── backend/               api-design.md, auth.md
@@ -1067,10 +1129,20 @@ This reads `.threadwork/state/checkpoint.json` written by the last `post-tool-us
 
 ### Hooks log location
 
-All hook output is logged to `.threadwork/workspace/hook-log.json`. Check this file if a hook seems to be misbehaving:
+Hook events are written to `.threadwork/state/hook-log.json` (JSONL). Lib/ module output goes to `.threadwork/logs/threadwork.log`. Use `threadwork log` to view both sources merged:
 
 ```bash
-cat .threadwork/workspace/hook-log.json | tail -50
+threadwork log                   # last 50 INFO+ entries
+threadwork log --level warn      # WARN and ERROR only — fastest triage
+threadwork log --tail 200        # wider window
+threadwork log --follow          # live-tail during an active session
+```
+
+For raw inspection:
+
+```bash
+tail -50 .threadwork/state/hook-log.json
+tail -50 .threadwork/logs/threadwork.log
 ```
 
 ### pricing.json not found
@@ -1550,5 +1622,244 @@ There is no dedicated command for design refs — they are managed as part of no
 - **Prefer `structural` for most UI work.** Use `exact` only when a designer has signed off on pixel-level fidelity as a requirement.
 - **HTML prototypes inject more context than images.** If you have an HTML/CSS prototype, prefer it over a screenshot — the agent can read class names, color values, and spacing directly from the markup.
 - **One spec per major UI area.** Group related components into one spec rather than creating one spec per component — it keeps the routing map compact.
+
+---
+
+## 21. Self-Evolution: Knowledge Harvest
+
+**New in v0.3.3.** Threadwork learns from your projects and applies that knowledge to future ones. Every project makes the framework smarter.
+
+### 21.1 The Evolution Loop
+
+```
+Project A completes → /tw:done harvests knowledge → proposals written to Threadwork repo
+        ↓
+/tw:harvest review → human approves/rejects → learned specs committed to repo
+        ↓
+Project B starts → threadwork init → seeds from core/ + stack-matched learned/
+        ↓
+Project B starts smarter, with patterns from Project A
+```
+
+### 21.2 What Gets Harvested
+
+At `/tw:done`, the harvest engine (`lib/harvest.js`) extracts knowledge from 5 sources:
+
+| Source | What It Extracts | Example |
+|--------|-----------------|---------|
+| Plan decisions | `<decision>` blocks from PLAN XML | "Used RS256 over HS256 for external token verification" |
+| Ralph Loop log | Anti-patterns that caused failures | "Missing input validation on POST handler" |
+| Knowledge notes | Critical discoveries (2+ session survival) | "Prisma $transaction silently succeeds without await" |
+| Proven rules | Spec enforcement rules that caught violations | `grep_must_not_exist: console.log in src/**` |
+| Diverged specs | Project specs that evolved beyond core | New rules added during the project |
+
+Proposals are written to `templates/specs/proposals/` in the Threadwork repository.
+
+### 21.3 Reviewing Proposals
+
+Run `/tw:harvest review` from the **Threadwork repository root** (not a project directory):
+
+```
+/tw:harvest review     # interactive review — walk through each proposal
+/tw:harvest list       # list pending proposals without acting
+/tw:harvest stats      # library statistics and contributing projects
+```
+
+For each proposal, you can:
+- **Approve** — move to `templates/specs/learned/{domain}/`, commit to repo
+- **Reject** — delete (optionally record reason to suppress similar future proposals)
+- **Edit** — modify content, then approve
+- **Skip** — leave for later
+
+Approved proposals are committed to the Threadwork repo:
+```
+git add templates/specs/learned/ templates/specs/proposals/
+git commit -m "learn: 3 patterns from my-saas-app, analytics-api"
+```
+
+### 21.4 How Learned Specs Seed New Projects
+
+When `threadwork init` runs in a new project:
+
+1. **Always copies** `templates/specs/core/` — the curated baseline (API design, auth, DB schema, testing)
+2. **Filters** `templates/specs/learned/` by tech stack match:
+   - Reads the user's tech stack answer (Q2)
+   - Matches spec tags against stack keywords (e.g., Next.js → `[typescript, nextjs, react, prisma]`)
+   - Copies matching learned specs to `.threadwork/specs/learned/`
+3. **Logs** which specs were seeded, for later harvest diffing
+
+A Next.js project gets TypeScript-tagged patterns. A Django project gets Python-tagged patterns. Universal patterns (no stack tags) seed into all projects.
+
+### 21.5 Provenance Tracking
+
+Every learned spec tracks where it came from:
+
+```yaml
+provenance:
+  - project: "my-saas-app"
+    date: 2026-04-10
+    source: knowledge-note
+    noteId: KN-1712882400000
+  - project: "analytics-api"
+    date: 2026-04-15
+    source: ralph-loop
+    evidence: "Missing Zod validation on 3 endpoints"
+```
+
+Confidence increases each time a different project validates the same pattern. Multi-project validation is the strongest signal.
+
+### 21.6 Directory Structure
+
+```
+templates/specs/                 (in Threadwork repo)
+├── core/                        curated baseline — always seeded
+│   ├── backend/                 api-design, auth, db-schema, ts-patterns, python-patterns
+│   ├── frontend/                react-patterns, styling, design-ref-example
+│   ├── testing/                 testing-standards
+│   └── enforcement/             example-rules
+├── learned/                     project-harvested — grows over time
+│   ├── patterns/                implementation patterns
+│   ├── anti-patterns/           mistakes caught by Ralph Loop
+│   ├── architecture/            stack/structure decisions
+│   └── index.json               machine-readable catalog
+└── proposals/                   pending human review
+```
+
+### 21.7 Tips
+
+- **Review proposals regularly.** Run `/tw:harvest review` after finishing a project. Fresh context makes approval/rejection decisions easier.
+- **Push learned specs.** `git push` after approving proposals so teammates get the knowledge too.
+- **Confidence matters.** Proposals at 0.7+ are high-confidence (multi-session survival or critical knowledge notes). Proposals at 0.3 are from single Ralph Loop failures — scrutinize these more carefully.
+- **Reject with reasons.** A rejection reason suppresses similar future proposals, keeping the review queue clean.
+- **Check stats.** `/tw:harvest stats` shows which projects contribute the most — useful for understanding where your framework knowledge is growing.
+
+---
+
+## 22. Activity Log & Debugging
+
+Threadwork writes structured log entries throughout every session — hook events, quality gate results, spec fetches, token warnings, and error traces. The activity log makes these visible without reading raw JSONL files.
+
+### 22.1 Log Sources
+
+Two files are merged into a single view:
+
+| File | Written by | Contains |
+|------|-----------|---------|
+| `.threadwork/state/hook-log.json` | `session-start.js`, `pre-tool-use.js`, `post-tool-use.js`, `subagent-stop.js` | Hook lifecycle events, gate results, token warnings, model switches |
+| `.threadwork/logs/threadwork.log` | `lib/logger.js` (used by quality-gate, spec-engine, harvest) | Structured module traces at DEBUG/INFO/WARN/ERROR levels |
+
+Both files use the same JSONL format (one JSON object per line), sorted by `timestamp` when merged.
+
+### 22.2 Log Levels
+
+| Level | When it appears |
+|-------|----------------|
+| `ERROR` | Hook crash, uncaught exception, quality gate max retries exceeded |
+| `WARN` | Token budget >80%, model switch recommended, gate failure (retrying), autonomous skip-and-log |
+| `INFO` | Normal hook events: session start, spec injection, gate pass, tool call timing, knowledge note capture |
+| `DEBUG` | Verbose traces from lib/ modules (off by default — use `--level debug` to see) |
+
+### 22.3 What Gets Captured
+
+**Every tool call** (`post-tool-use`):
+```
+2026-04-15 10:23:47  INFO   post-tool-use       Write | 312 tokens | 43ms
+```
+
+**Quality gate results** (`subagent-stop`):
+```
+2026-04-15 10:23:51  WARN   subagent-stop       gates FAILED (retry 1/5) | classification=knowledge_gap | violation="Missing Zod validation on POST handler"
+2026-04-15 10:24:18  INFO   subagent-stop       gates PASSED | tier=advanced | autonomy=supervised
+```
+
+**Token budget warnings** (`post-tool-use`):
+```
+2026-04-15 10:25:00  WARN   post-tool-use       Token budget warning: 340K used
+```
+
+**Model switches** (`pre-tool-use`):
+```
+2026-04-15 10:23:40  INFO   pre-tool-use        model switch sonnet → opus for tw-planner [7-dim score=72 (high, conf=85%)]
+```
+
+**Spec and knowledge events** (`pre-tool-use`, `session-start`):
+```
+2026-04-15 10:23:39  INFO   pre-tool-use        spec_fetch SPEC:be-001 | 420 tokens
+2026-04-15 10:23:38  INFO   session-start       injected 1240 bytes | tier=advanced | checkpoint=false
+```
+
+**What is NOT captured:** The content of AI conversational messages (prompts and responses) — hooks only observe tool calls and their inputs/outputs, not the text Claude sends or receives. To evaluate AI output quality, use gate pass/fail rates and the `primary_violation` field on WARN entries.
+
+### 22.4 CLI Reference
+
+```bash
+# Quick triage — last 20 WARN and ERROR entries
+threadwork log --level warn
+
+# Full recent history
+threadwork log --tail 100
+
+# Filter to the past hour
+threadwork log --since 1h
+
+# Live-tail during an active Claude Code session
+threadwork log --follow
+
+# Raw JSONL output (pipe-friendly)
+threadwork log --json | jq 'select(.level == "ERROR")'
+
+# All levels including verbose DEBUG
+threadwork log --level debug --tail 200
+```
+
+### 22.5 Slash Command Reference
+
+Inside Claude Code, use `/tw:log` (reads both log sources and formats them as a table):
+
+```
+/tw:log                    Last 20 WARN+ entries (default — quick summary)
+/tw:log --level info       Last 50 INFO+ entries
+/tw:log --tail 100         Last 100 entries
+/tw:log --since 30m        Entries from the last 30 minutes
+/tw:log --errors-only      ERROR entries only
+/tw:log --level debug      All levels including DEBUG traces
+```
+
+### 22.6 Common Triage Patterns
+
+**"Why did the Ralph Loop retry so many times?"**
+```bash
+threadwork log --level warn --since 1h
+```
+Look for `gates FAILED` entries — each one shows the `primary_violation` and `classification`.
+
+**"Was a spec actually fetched for that task?"**
+```bash
+threadwork log --level info | grep spec_fetch
+```
+
+**"What model ran the last executor?"**
+```bash
+threadwork log --level info | grep "model switch\|model confirmed"
+```
+
+**"Did session-start inject cleanly?"**
+```bash
+threadwork log --level info | grep session-start
+```
+
+### 22.7 Log File Management
+
+Log files are append-only and can grow large across many sessions. They are excluded from git by the `.gitignore` block written at `threadwork init`. To clear them:
+
+```bash
+# Clear lib/ module log (hooks log is preserved)
+> .threadwork/logs/threadwork.log
+
+# Clear hook log (loses Ralph Loop history)
+> .threadwork/state/hook-log.json
+```
+
+There is no built-in rotation — if the files grow too large, clear them manually between sessions.
 
 *Threadwork is MIT licensed. Issues and PRs welcome at [github.com/nexora/threadwork](https://github.com/nexora/threadwork).*

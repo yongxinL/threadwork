@@ -73,4 +73,24 @@ program
     }
   });
 
+// ── threadwork log ─────────────────────────────────────────────────────────────
+program
+  .command('log')
+  .description('View Threadwork activity logs (errors, warnings, quality gate results)')
+  .option('--level <level>', 'Minimum log level to display: debug, info, warn, error', 'info')
+  .option('--tail <n>', 'Show last N matching entries (default: 50)', '50')
+  .option('--follow', 'Follow log output in real time (poll every 500ms, Ctrl+C to stop)', false)
+  .option('--since <time>', 'Show entries since: 1h, 30m, or a date string (e.g. 2026-04-15)')
+  .option('--json', 'Output raw JSONL — one JSON object per line (pipe-friendly)', false)
+  .action(async (options) => {
+    try {
+      const { runLog } = await import('../install/log.js');
+      await runLog(options);
+    } catch (err) {
+      console.error(`\nError reading logs: ${err.message}`);
+      if (process.env.DEBUG) console.error(err.stack);
+      process.exit(1);
+    }
+  });
+
 program.parse();

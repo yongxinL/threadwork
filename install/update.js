@@ -575,7 +575,7 @@ async function runMigrateV032({ cwd, stateDir, isDryRun }) {
   }
 
   // ── Step 3: Copy enforcement example spec template ─────────────────────────
-  const enforcementTemplateSrc = join(__dirname, '..', 'templates', 'specs', 'enforcement', 'example-rules.md');
+  const enforcementTemplateSrc = join(__dirname, '..', 'templates', 'specs', 'core', 'enforcement', 'example-rules.md');
   const enforcementTemplateDest = join(enforcementDir, 'example-rules.md');
   if (existsSync(enforcementTemplateSrc) && !existsSync(enforcementTemplateDest)) {
     applied.push('  [3] Copying enforcement example spec template');
@@ -594,7 +594,7 @@ async function runMigrateV032({ cwd, stateDir, isDryRun }) {
   }
 
   // ── Step 5: Copy design-ref example spec template ─────────────────────────
-  const designRefTemplateSrc = join(__dirname, '..', 'templates', 'specs', 'frontend', 'design-ref-example.md');
+  const designRefTemplateSrc = join(__dirname, '..', 'templates', 'specs', 'core', 'frontend', 'design-ref-example.md');
   const designRefTemplateDest = join(frontendDir, 'design-ref-example.md');
   if (existsSync(designRefTemplateSrc) && !existsSync(designRefTemplateDest)) {
     applied.push('  [5] Copying design-ref example spec template');
