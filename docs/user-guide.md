@@ -67,7 +67,10 @@ npm --version    # 10.x.x
 # Install globally
 npx threadwork-cc@latest
 
-# In your project directory:
+# Register hooks globally (once per machine — required for Claude Code to fire hooks)
+threadwork init --global
+
+# In each project directory: scaffold .threadwork/ (hook files, state, specs)
 threadwork init
 ```
 
@@ -126,9 +129,25 @@ Every Claude session has a finite context window. Threadwork tracks estimated to
 
 ## 4. Getting Started
 
-### Step 1: Run `threadwork init`
+### Step 1: Register hooks globally
 
-In your project directory:
+Hooks must be registered once in the global Claude Code settings before any project can use them:
+
+```bash
+threadwork init --global
+```
+
+This writes hook registrations to `~/.claude/settings.json`. One machine — once. All projects share this registration.
+
+### Step 2: Scaffold each project
+
+In each project directory, scaffold the local `.threadwork/` structure (hook files, state, specs):
+
+```bash
+threadwork init
+```
+
+This is safe to run even if the project already has a `.threadwork/` — it preserves your existing state and specs.
 
 ```bash
 threadwork init
@@ -152,8 +171,8 @@ After answering, `threadwork init` will:
 
 - Scaffold `.threadwork/` with all required subdirectories
 - Write `project.json`, `quality-config.json`, `token-log.json`
-- Copy 4 hooks into `.threadwork/hooks/`
-- Register hooks in `~/.claude/settings.json` (Claude Code) or inject into `AGENTS.md` (Codex)
+- Copy 4 hook files into `.threadwork/hooks/`
+- (With `--global`): Register hooks in `~/.claude/settings.json` so Claude Code fires them
 - Install 35 slash commands to `~/.claude/commands/tw/`
 - Install 9 agent definitions to `~/.claude/agents/`
 - Copy the project-level guide as `CLAUDE.md` (or `AGENTS.md` for Codex)
@@ -1088,12 +1107,14 @@ For very early-stage projects where no document exists yet, use `/tw:new-project
 
 ### Hooks not firing
 
-1. Check that hooks are registered in `~/.claude/settings.json`:
+1. Check that hooks are registered globally in `~/.claude/settings.json`:
    ```bash
-   cat ~/.claude/settings.json | grep threadwork
+   cat ~/.claude/settings.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(list(d.get('hooks', {}).keys()))"
    ```
-2. Ensure you're in a project where `threadwork init` was run (`.threadwork/` exists)
-3. Run the test harness to verify hooks work in isolation:
+   Should show: `['SessionStart', 'PreToolUse', 'PostToolUse', 'SubagentStop']`
+2. If empty, register hooks once: `threadwork init --global`
+3. Ensure you're in a project where `threadwork init` was run (`.threadwork/` exists)
+4. Run the test harness to verify hooks work in isolation:
    ```bash
    node hooks/test-harness.js all
    node hooks/test-harness.js session-start

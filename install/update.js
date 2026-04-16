@@ -154,6 +154,17 @@ async function runMigrateV020({ cwd, stateDir, isDryRun }) {
     skipped.push('  [6–10] lib/ update skipped (source not found)');
   }
 
+  // ── Step 6b: Copy node_modules needed by lib/ ────────────────────────────
+  const nmSourceDir020 = join(__dirname, '..', 'node_modules');
+  const nmDestDir020 = join(cwd, '.threadwork', 'node_modules');
+  if (existsSync(nmSourceDir020)) {
+    applied.push('  [6b] Copied node_modules → .threadwork/node_modules/ (gray-matter deps)');
+    if (!isDryRun) {
+      mkdirSync(nmDestDir020, { recursive: true });
+      cpSync(nmSourceDir020, nmDestDir020, { recursive: true });
+    }
+  }
+
   // ── Step 11: Install/update agent templates ───────────────────────────────
   const { getCommandsDir, detectRuntime } = await import('../lib/runtime.js');
   const runtime = detectRuntime();
@@ -396,6 +407,17 @@ async function runMigrateV030({ cwd, stateDir, isDryRun }) {
     }
   } else {
     skipped.push('  [5] lib/ update skipped');
+  }
+
+  // ── Step 5b: Copy node_modules needed by lib/ ────────────────────────────
+  const nmSourceDir030 = join(__dirname, '..', 'node_modules');
+  const nmDestDir030 = join(cwd, '.threadwork', 'node_modules');
+  if (existsSync(nmSourceDir030)) {
+    applied.push('  [5b] Copied node_modules → .threadwork/node_modules/ (gray-matter deps)');
+    if (!isDryRun) {
+      mkdirSync(nmDestDir030, { recursive: true });
+      cpSync(nmSourceDir030, nmDestDir030, { recursive: true });
+    }
   }
 
   // ── Step 6: Install new slash commands ────────────────────────────────────
@@ -657,6 +679,17 @@ async function runMigrateV032({ cwd, stateDir, isDryRun }) {
     applied.push('  [10] Updated lib/ (all modules including new v0.3.2 modules)');
   }
 
+  // ── Step 10b: Copy node_modules needed by lib/ ───────────────────────────
+  const nmSourceDir032 = join(__dirname, '..', 'node_modules');
+  const nmDestDir032 = join(cwd, '.threadwork', 'node_modules');
+  if (existsSync(nmSourceDir032)) {
+    if (!isDryRun) {
+      mkdirSync(nmDestDir032, { recursive: true });
+      cpSync(nmSourceDir032, nmDestDir032, { recursive: true });
+    }
+    applied.push('  [10b] Copied node_modules → .threadwork/node_modules/ (gray-matter deps)');
+  }
+
   // ── Step 11: Copy new agent template: tw-reviewer.md ─────────────────────
   const { getCommandsDir, detectRuntime } = await import('../lib/runtime.js');
   const runtime = detectRuntime();
@@ -826,6 +859,26 @@ async function collectFrameworkUpdates(cwd, isDryRun) {
     }
   }
 
+  // ── Node modules (.threadwork/node_modules/) ──────────────────────────────────
+  // lib/ files import gray-matter; copy node_modules so they resolve in user projects
+  const nmSourceDir = join(__dirname, '..', 'node_modules');
+  const nmDestDir = join(cwd, '.threadwork', 'node_modules');
+  if (existsSync(nmSourceDir)) {
+    const grayMatterDest = join(nmDestDir, 'gray-matter');
+    const needsSync = !existsSync(grayMatterDest);
+    if (needsSync) {
+      lines.push('  ✨ .threadwork/node_modules/ — new (required by lib/)');
+      newCount++;
+      if (!isDryRun) {
+        mkdirSync(nmDestDir, { recursive: true });
+        cpSync(nmSourceDir, nmDestDir, { recursive: true });
+      }
+    } else {
+      lines.push('  ✅ .threadwork/node_modules/');
+      sameCount++;
+    }
+  }
+
   // ── Commands (~/.claude/commands/tw/) ────────────────────────────────────────
   lines.push('\nCommands:');
   const commandsSrcDir = join(__dirname, '..', 'templates', 'commands');
@@ -871,13 +924,15 @@ async function collectFrameworkUpdates(cwd, isDryRun) {
       if (!statSync(domainSrc).isDirectory()) continue;
       const domainDest = join(specsDestDir, domain);
       for (const file of readdirSync(domainSrc).sort()) {
+        const srcPath = join(domainSrc, file);
+        if (!statSync(srcPath).isFile()) continue; // skip subdirectories
         const destFile = join(domainDest, file);
         if (existsSync(destFile)) {
           lines.push(`  ⚠  specs/${domain}/${file} — skipped (user spec preserved)`);
         } else {
           lines.push(`  ✨ specs/${domain}/${file} — new template`);
           newCount++;
-          if (!isDryRun) { mkdirSync(domainDest, { recursive: true }); cpSync(join(domainSrc, file), destFile); }
+          if (!isDryRun) { mkdirSync(domainDest, { recursive: true }); cpSync(srcPath, destFile); }
         }
       }
     }

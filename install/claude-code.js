@@ -34,6 +34,7 @@ export function writeGitignoreBlock(projectDir) {
     '.threadwork/state/blueprint-migration.json',
     '.threadwork/worktrees/',
     '.threadwork/backup/',
+    '.threadwork/node_modules/',
     BLOCK_END
   ].join('\n');
 

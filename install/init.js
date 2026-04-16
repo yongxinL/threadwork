@@ -254,6 +254,14 @@ export async function runInit(options) {
       if (existsSync(libSourceDir)) {
         cpSync(libSourceDir, libDestDir, { recursive: true });
       }
+
+      // Copy node_modules needed by lib/ (e.g. gray-matter and its deps)
+      const nmSourceDir = join(__dirname, '..', 'node_modules');
+      const nmDestDir = join(cwd, '.threadwork', 'node_modules');
+      if (existsSync(nmSourceDir)) {
+        mkdirSync(nmDestDir, { recursive: true });
+        cpSync(nmSourceDir, nmDestDir, { recursive: true });
+      }
     }
 
     // Copy starter spec templates (core/ → project specs)

@@ -99,12 +99,13 @@ Five targeted upgrades informed by LangChain's harness taxonomy and OpenAI's har
 # 1. Install globally
 npx threadwork-cc@latest
 
-# 2. In your project directory
-threadwork init
-#   → Asks 9 questions (including context model, cost budget, and switch policy)
-#   → Scaffolds .threadwork/, registers 4 hooks, installs commands and agents
+# 2. Register hooks globally (once per machine — required for Claude Code to fire hooks)
+threadwork init --global
 
-# 3. Start Claude Code in your project
+# 3. In each project: scaffold .threadwork/ (hook files, state, specs)
+threadwork init
+
+# 4. Start Claude Code in your project
 # In Claude Code:
 /tw:new-project
 /tw:plan-phase 1
@@ -158,6 +159,11 @@ threadwork --version
 
 ```bash
 cd /your/project
+
+# First time on this machine: register hooks globally (once only)
+threadwork init --global
+
+# Each project: scaffold .threadwork/ (hook files, state, specs)
 threadwork init
 ```
 
