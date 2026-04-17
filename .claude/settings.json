@@ -5,7 +5,9 @@
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/george.li/.claude/settings.json'\\)\\); print\\(json.dumps\\(d.get\\('hooks', {}\\), indent=2\\)\\)\")",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/george.li/.claude/settings.json'\\)\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
       "Bash(threadwork init *)",
-      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/george.li/.claude/settings.json'\\)\\); print\\(d.get\\('permissions', {}\\).get\\('allow', []\\)\\)\")"
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/george.li/.claude/settings.json'\\)\\); print\\(d.get\\('permissions', {}\\).get\\('allow', []\\)\\)\")",
+      "Bash(git:*)",
+      "Bash(node:*)"
     ]
   }
 }

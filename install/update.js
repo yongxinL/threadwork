@@ -832,6 +832,53 @@ async function collectFrameworkUpdates(cwd, isDryRun) {
     syncFile(pricingTemplate, pricingDest, '~/.threadwork/pricing.json');
   }
 
+  // ── ~/.claude/settings.json — global hook commands ───────────────────────────
+  const { getHooksConfig } = await import('../lib/runtime.js');
+  const globalSettingsPath = join(homedir(), '.claude', 'settings.json');
+  if (existsSync(globalSettingsPath)) {
+    try {
+      const globalSettings = JSON.parse(readFileSync(globalSettingsPath, 'utf8'));
+      const expectedHooks = getHooksConfig('claude-code').hooks;
+      let staleCommands = [];
+
+      if (globalSettings.hooks) {
+        for (const [eventName, expectedEntries] of Object.entries(expectedHooks)) {
+          const existingEntries = globalSettings.hooks[eventName] ?? [];
+          for (const expectedEntry of expectedEntries) {
+            for (const expectedHook of expectedEntry.hooks ?? []) {
+              const hookFile = expectedHook.command.match(/\.threadwork\/hooks\/(\S+\.js)/)?.[1];
+              if (!hookFile) continue;
+              const existingHook = existingEntries
+                .flatMap(e => e.hooks ?? [])
+                .find(h => h.command.includes(hookFile));
+              if (existingHook && existingHook.command !== expectedHook.command) {
+                staleCommands.push({ eventName, existingHook, newCommand: expectedHook.command });
+              }
+            }
+          }
+        }
+      }
+
+      if (staleCommands.length > 0) {
+        lines.push(`  ⬆  ~/.claude/settings.json — ${staleCommands.length} hook command(s) need update (adding bash fallback wrapper)`);
+        updatedCount++;
+        if (!isDryRun) {
+          for (const { existingHook, newCommand } of staleCommands) {
+            existingHook.command = newCommand;
+          }
+          writeFileSync(globalSettingsPath, JSON.stringify(globalSettings, null, 2), 'utf8');
+        }
+      } else {
+        lines.push('  ✅ ~/.claude/settings.json — hook commands up to date');
+        sameCount++;
+      }
+    } catch {
+      lines.push('  ⚠  ~/.claude/settings.json — could not read or parse (skipped)');
+    }
+  } else {
+    lines.push('  ⚠  ~/.claude/settings.json — not found (run threadwork init to register hooks)');
+  }
+
   // ── Hooks (.threadwork/hooks/) ────────────────────────────────────────────────
   lines.push('\nHooks:');
   const hooksSourceDir = join(__dirname, '..', 'hooks');

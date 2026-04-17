@@ -7,6 +7,30 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3-patch] — 2026-04-17
+
+**Hook resilience: graceful no-op in uninitialized directories, and `threadwork update` now syncs global hook commands.**
+
+### Fixed
+
+- **`lib/runtime.js`** `getHooksConfig()`: Hook commands changed from bare `node .threadwork/hooks/X.js` to `bash -c '[ -f .threadwork/hooks/X.js ] && node .threadwork/hooks/X.js || exit 0'`. The bare form threw `ERR_MODULE_NOT_FOUND` (non-blocking but noisy) whenever Claude ran in a directory that was not a Threadwork-initialized project — including the Threadwork repo itself.
+- **`install/update.js`** `collectFrameworkUpdates()`: Added a new step that reads `~/.claude/settings.json` and replaces any stale hook commands (bare `node ...`) with the current bash-wrapper form. Previously, `threadwork update` synced hook _files_ (`.threadwork/hooks/*.js`) but never touched the global settings that register those hooks, so the fix couldn't be delivered to existing installs without re-running `threadwork init`.
+
+### Changed
+
+- `threadwork update` output now includes a `~/.claude/settings.json` line showing whether global hook commands are up to date or need a patch. This makes the global settings a first-class part of the update surface.
+
+### No breaking changes
+
+- Initialized projects are unaffected — the bash wrapper is functionally identical when `.threadwork/hooks/X.js` exists.
+- Non-initialized directories (including the Threadwork repo itself) now produce zero output from hooks instead of `ERR_MODULE_NOT_FOUND` noise.
+
+### Migration
+
+No migration command needed. Run `threadwork update` in any initialized project — it will patch `~/.claude/settings.json` automatically. Restart Claude Code to load the updated hook registrations.
+
+---
+
 ## [0.3.3] — 2026-04-15
 
 **Two-tier spec library, AI anti-pattern detection, knowledge harvest engine, and token-efficient quality gate output.**

@@ -4,6 +4,37 @@
 
 ---
 
+## v0.3.3 — Hook Resilience Patch (2026-04-17)
+
+No migration command. Just run:
+
+```bash
+threadwork update
+```
+
+This patches `~/.claude/settings.json` in-place to use the new bash-wrapper hook commands, then restarts cleanly.
+
+### What changed
+
+| Component | Before | After |
+|-----------|--------|-------|
+| Hook commands in `~/.claude/settings.json` | `node .threadwork/hooks/X.js` | `bash -c '[ -f .threadwork/hooks/X.js ] && node ... \|\| exit 0'` |
+| `threadwork update` output | No global settings check | Reports `~/.claude/settings.json` hook command status |
+
+### Why
+
+The bare `node` form threw `ERR_MODULE_NOT_FOUND` whenever Claude ran in a directory without a `.threadwork/hooks/` directory (any non-initialized project, including the Threadwork repo itself). The error was non-blocking but produced noisy output on every tool call.
+
+### Post-upgrade step
+
+Restart Claude Code after running `threadwork update` — hooks are loaded at session start.
+
+### No breaking changes
+
+Initialized projects work identically. Non-initialized directories now produce zero hook output instead of error noise.
+
+---
+
 ## v0.3.2 → v0.3.3 — Self-Evolution (2026-04-15)
 
 Run:
@@ -534,6 +565,38 @@ Fix required: The User type lacks a 'token' field. Add 'token?: string' to src/t
 ---
 
 ## Troubleshooting
+
+### Hook errors: `ERR_MODULE_NOT_FOUND` / `PostToolUse:Bash hook error`
+
+If you see errors like:
+
+```
+PostToolUse:Bash hook error
+Failed with non-blocking status code: node:internal/modules/cjs/loader:1478
+ERR_MODULE_NOT_FOUND
+Shell cwd was reset to /your/project
+```
+
+Your global `~/.claude/settings.json` has the old bare `node .threadwork/hooks/X.js` hook commands, which fail in any directory without a `.threadwork/hooks/` folder. Fix:
+
+```bash
+# From any initialized project:
+threadwork update
+```
+
+This patches `~/.claude/settings.json` to use the bash-wrapper form. Then restart Claude Code.
+
+If you haven't yet initialized any project, manually edit `~/.claude/settings.json` and replace each hook command:
+
+```json
+// Old (throws ERR_MODULE_NOT_FOUND in uninitialized dirs):
+"command": "node .threadwork/hooks/post-tool-use.js"
+
+// New (silent no-op when hooks dir is absent):
+"command": "bash -c '[ -f .threadwork/hooks/post-tool-use.js ] && node .threadwork/hooks/post-tool-use.js || exit 0'"
+```
+
+---
 
 ### "Already at v0.2.0" but hooks aren't working
 
